@@ -1,0 +1,123 @@
+import { describe, expect, it } from "vitest";
+import { analyzeLocally } from "./analyzeLocally";
+import type { AnalyzeError, AnalyzeResult } from "./analyzeLocally";
+
+/** The AI tier needs a network call and a key; these cover the offline path. */
+const OFFLINE = { skipAIPlan: true } as const;
+
+function expectSuccess(result: AnalyzeResult | AnalyzeError): AnalyzeResult {
+  if ("error" in result) {
+    throw new Error(`expected a scenario, got error: ${result.error}`);
+  }
+  return result;
+}
+
+const SAMPLES = [
+  {
+    lang: "python",
+    name: "two sum",
+    code: `def twoSum(nums, target):
+    seen = {}
+    for i, num in enumerate(nums):
+        complement = target - num
+        if complement in seen:
+            return [seen[complement], i]
+        seen[num] = i
+    return []
+# Example: twoSum([2, 7, 11, 15], 9)`,
+  },
+  {
+    lang: "java",
+    name: "bubble sort",
+    code: `void bubbleSort(int[] arr) {
+    for (int i = 0; i < arr.length - 1; i++)
+        for (int j = 0; j < arr.length - i - 1; j++)
+            if (arr[j] > arr[j + 1]) { int t = arr[j]; arr[j] = arr[j+1]; arr[j+1] = t; }
+}
+// Example: bubbleSort([64, 34, 25, 12, 22, 11, 90])`,
+  },
+  {
+    lang: "cpp",
+    name: "binary search",
+    code: `int binarySearch(vector<int>& nums, int target) {
+    int left = 0, right = nums.size() - 1;
+    while (left <= right) {
+        int mid = left + (right - left) / 2;
+        if (nums[mid] == target) return mid;
+        if (nums[mid] < target) left = mid + 1;
+        else right = mid - 1;
+    }
+    return -1;
+}
+// Example: binarySearch([1, 3, 5, 7, 9, 11], 7)`,
+  },
+];
+
+describe("analyzeLocally", () => {
+  it.each(SAMPLES)("produces a timeline for $lang $name", async ({ lang, code }) => {
+    const result = expectSuccess(await analyzeLocally(code, lang, OFFLINE));
+    expect(result.scenario.timeline.length).toBeGreaterThan(0);
+    expect(result.traceSteps).toBe(result.scenario.timeline.length);
+    expect(result.scenario.primaryMode).toBeTruthy();
+  });
+
+  it("rejects empty input", async () => {
+    const result = await analyzeLocally("   ", "javascript", OFFLINE);
+    expect(result).toHaveProperty("error");
+  });
+
+  it("traces JavaScript through live instrumentation", async () => {
+    const code = `function reverseList(head) {
+  let prev = null;
+  let current = head;
+  while (current !== null) {
+    const next = current.next;
+    current.next = prev;
+    prev = current;
+    current = next;
+  }
+  return prev;
+}
+// Example: reverseList({ value: 1, next: { value: 2, next: { value: 3, next: null } } })`;
+    const result = expectSuccess(await analyzeLocally(code, "javascript", OFFLINE));
+    expect(result.scenario.timeline.length).toBeGreaterThan(0);
+  });
+
+  it("always returns a visualization rather than failing on unknown code", async () => {
+    const code = `function mystery(a, b) {
+  let acc = 0;
+  for (let i = 0; i < a; i++) {
+    acc = acc + b;
+  }
+  return acc;
+}
+// Example: mystery(3, 4)`;
+    const result = expectSuccess(await analyzeLocally(code, "javascript", OFFLINE));
+    expect(result.scenario.timeline.length).toBeGreaterThan(0);
+  });
+
+  // Ported from the former scripts/test-fallback.ts, which printed results
+  // rather than asserting on them.
+  it.each([
+    { label: "unknown algorithm", code: "def mystery(x):\n    y = x + 1\n    return y" },
+    { label: "no recognisable pattern", code: "def notTwoSum(a, b):\n    for i in range(len(a)):\n        print(a[i])\n    return 0" },
+    { label: "bare loop", code: "for i in range(5): pass" },
+  ])("falls back to a generic visualization for $label", async ({ code }) => {
+    const result = expectSuccess(await analyzeLocally(code, "python", OFFLINE));
+    expect(result.scenario.timeline.length).toBeGreaterThan(0);
+  });
+
+  it("does not hang on code containing an infinite loop", async () => {
+    const code = `function spin(n) {
+  let count = n;
+  while (true) {
+  }
+  return count;
+}
+// Example: spin(1)`;
+    const started = Date.now();
+    const result = await analyzeLocally(code, "javascript", OFFLINE);
+    expect(Date.now() - started).toBeLessThan(10000);
+    expect(result).toBeDefined();
+  });
+});
