@@ -4,8 +4,8 @@ A zero-cost, client-side **LeetCode / DSA Visualizer** built with Next.js, React
 
 ## Features
 
-- **Instant client-side tracing** — instrument JS/TS code, execute in a sandbox, visualize in under 100ms
-- **4 Visualization Modes**: Array, Hash Map, Linked List, Tree/Graph
+- **Instant client-side tracing** — instrument JS/TS code, execute it, visualize in under 100ms
+- **6 Visualization Modes**: Array, Result Array, Hash Map, Linked List, Tree/Graph, Grid
 - **Template merging** — real execution values merged with human-readable explanation templates
 - **Step slider** — scrub through trace history with live variable watch panel
 - **Built-in demos** — Two Sum, Reverse Linked List, Combination Sum (zero latency)
@@ -20,6 +20,50 @@ Code → instrumentCode() → runSandbox() → traceHistory[]
                                               ↓
                                     Slider + VisualizationCanvas
 ```
+
+`instrumentCode()` discovers the bindings a snippet actually declares — parameters,
+`const`/`let`/`var`, destructured names, `for...of` heads — and records a snapshot at
+each point that changes state: assignments, indexed writes, `++`/`--`, and mutating
+method calls like `res.push(...)` or `seen.set(...)`.
+
+### Execution budgets
+
+Three independent budgets bound every run, enforced in `runSandbox()`:
+
+| Budget | Default | Stops |
+|---|---|---|
+| `maxSteps` | 500 | Runaway trace growth |
+| `maxLoopIterations` | 1,000,000 | Loops that record no steps |
+| `timeoutMs` | 1000 | Everything else |
+
+The step budget alone can't stop `while (true) {}` — a loop whose body records
+nothing never calls `__trace__`. So `instrumentCode()` rewrites loop *conditions*
+to call a guard first (`while (__guard__() && (cond))`), which also covers
+brace-less bodies and the tail of a `do/while`.
+
+## Testing
+
+```bash
+npm test        # vitest, 42 tests over the engine
+npm run typecheck
+```
+
+CI runs typecheck → test → build on every push and pull request.
+
+## Known limits
+
+- **Instrumentation is regex-based, not an AST walk.** A statement split across
+  several lines is only seen at its first line, and a brace-less header with its
+  body on the *same* line (`if (x) return -1;`) is not traced.
+- **`new Function()` is an execution wrapper, not a security boundary.** Traced
+  code runs on the page with the same access as the rest of the app. That is
+  acceptable here because you are running your own code in your own browser, and
+  nothing is ever executed server-side — but it is not a sandbox in the isolation
+  sense, and untrusted third-party code should not be pasted in.
+- **Unbounded recursion** is not covered by the budgets above; it terminates via
+  the engine's own stack overflow and surfaces as a normal execution error.
+- Non-JS languages (Python, Java, C++) are matched to **pattern tracers**; only
+  JavaScript/TypeScript is genuinely executed.
 
 ## Getting Started
 
@@ -80,7 +124,8 @@ src/
 │   └── types.ts
 ├── components/
 │   ├── engine/                 # Canvas, player, TraceStepView
-│   └── modes/                  # ARRAY, HASH_MAP, LINKED_LIST, TREE
+│   └── modes/                  # ARRAY, RESULT_ARRAY, HASH_MAP,
+│                               # LINKED_LIST, TREE, GRID
 └── app/api/templates/          # Optional slim Gemini endpoint
 ```
 
