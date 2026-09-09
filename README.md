@@ -18,7 +18,17 @@ Free, no account, no API key, no AI. Everything runs on your machine.
 - **Visualization modes**: Array, Result Array, Hash Map, Linked List, Tree/Graph, Grid,
   and the queue / stack / set a traversal drives itself from
 - **Step slider** — scrub through trace history with live variable watch panel, with
-  the executing line highlighted in the editor gutter
+  the executing line highlighted in the editor gutter; the track is marked where the
+  code decided something, returned, or stopped
+- **Beats or every line** — the timeline folds bookkeeping into beats the canvas can
+  show; flip to *Every line* for the debugger's view of the same run
+- **Steps, Output, Shortcuts** — a clickable list of every step, the value the code
+  returned and everything it printed, and keyboard control (Space, ← →, Home, End,
+  ⌘↩ to run)
+- **Share a link** — the code, language and test case travel in the URL fragment, so a
+  friend opens the same program and it runs itself; nothing is uploaded anywhere
+- **An editor that reads like one** — syntax colouring for Python, JavaScript, Java and
+  C++, Tab indents, and panels you can drag to resize
 - **The algorithm leads the picture** — a BFS shows its queue over the grid, a DP its
   table, a recursion the tree of calls it actually made; everything else the code
   builds is drawn after it, and nothing recognised means "draw what the code holds"
@@ -129,6 +139,13 @@ CI runs typecheck → test → build on every push and pull request.
   that exists to stop it. Such loops are still bounded by `__guard__`.
 - **Only whole-line `if` / `else if` conditions become steps.** A ternary or a
   `&&` short-circuit buried inside an expression is not surfaced as a branch.
+  An inline early exit — `if (cond) return x;` — is traced as both the decision
+  and the return; an inline `continue` or `break` is only the decision.
+- **The entry point is the function nothing else calls.** With several functions,
+  the one named in the `Example:` comment wins; otherwise the first one that is
+  never called elsewhere in the code, so a `dfs` helper written above `numIslands`
+  is not mistaken for the entry. Two mutually recursive functions fall back to
+  the first.
 - **`new Function()` is an execution wrapper, not a security boundary.** Traced
   code runs on the page with the same access as the rest of the app. That is
   acceptable here because you are running your own code in your own browser, and

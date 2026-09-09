@@ -1,13 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { CODE_SAMPLES } from "@/lib/samples";
-import { analyzeLocally } from "@/lib/engine/analyzeLocally";
-import type { AnalyzeResult } from "@/lib/engine/analyzeLocally";
-import type { PatternHint } from "@/lib/engine/patternHint";
 import { scenarios } from "@/lib/scenarios";
-import type { Scenario } from "@/lib/types";
+import { tokenizeLines } from "@/lib/visual/highlight";
+import type { Token, TokenType } from "@/lib/visual/highlight";
 
 const LANG_EXT: Record<string, string> = {
   python: "py",
@@ -17,20 +15,24 @@ const LANG_EXT: Record<string, string> = {
   typescript: "ts",
 };
 
-export interface VisualizeMeta {
-  elapsedMs: number;
-  traceSteps: number;
-  warning?: string;
-  pattern?: string;
-  patternHint?: PatternHint;
-  /** Where the timeline came from — "trace" means the user's own execution. */
-  source?: AnalyzeResult["source"];
-  /** Every technique the code combines, primary first. */
-  techniques?: AnalyzeResult["techniques"];
-}
+export type LoadStage = "idle" | "tracing" | "loading_python";
 
 interface CodeEditorProps {
-  onScenarioGenerated: (scenario: Scenario, meta?: VisualizeMeta) => void;
+  code: string;
+  language: string;
+  testCase: string;
+  stage: LoadStage;
+  error: string | null;
+  warning?: string;
+  lastElapsed?: number;
+  width: number;
+  onCodeChange: (code: string) => void;
+  onLanguageChange: (language: string) => void;
+  onTestCaseChange: (testCase: string) => void;
+  onVisualize: () => void;
+  onLoadSample: (id: string) => void;
+  onLoadDemo: (id: string) => void;
+  onDismissError: () => void;
   /** 1-based source line of the step being shown, highlighted in the gutter. */
   activeLine?: number;
   /**
@@ -40,126 +42,99 @@ interface CodeEditorProps {
   coveredLines?: number[];
 }
 
-type LoadStage = "idle" | "tracing" | "loading_python";
+const LINE_HEIGHT = 20;
+const PAD_Y = 12;
 
-export function CodeEditor({ onScenarioGenerated, activeLine, coveredLines }: CodeEditorProps) {
-  const [code, setCode] = useState<string>(CODE_SAMPLES[0].code);
-  const [language, setLanguage] = useState<string>(CODE_SAMPLES[0].language);
-  const [stage, setStage] = useState<LoadStage>("idle");
-  const [error, setError] = useState<string | null>(null);
-  const [warning, setWarning] = useState<string | null>(null);
-  const [lastElapsed, setLastElapsed] = useState<number | null>(null);
-  const [testCase, setTestCase] = useState("");
-  const [mounted, setMounted] = useState(false);
+/** Token colours, by role. Tokens read through the appearance so both themes hold. */
+const TOKEN_COLOR: Record<TokenType, string> = {
+  plain: "var(--mac-text)",
+  keyword: "var(--syn-keyword)",
+  builtin: "var(--syn-builtin)",
+  string: "var(--syn-string)",
+  number: "var(--syn-number)",
+  comment: "var(--syn-comment)",
+  example: "var(--syn-example)",
+  func: "var(--syn-func)",
+  punct: "var(--syn-punct)",
+  decorator: "var(--syn-builtin)",
+};
+
+export function CodeEditor({
+  code,
+  language,
+  testCase,
+  stage,
+  error,
+  warning,
+  lastElapsed,
+  width,
+  onCodeChange,
+  onLanguageChange,
+  onTestCaseChange,
+  onVisualize,
+  onLoadSample,
+  onLoadDemo,
+  onDismissError,
+  activeLine,
+  coveredLines,
+}: CodeEditorProps) {
   const gutterRef = useRef<HTMLDivElement>(null);
+  const layerRef = useRef<HTMLPreElement>(null);
+  const textRef = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => setMounted(true), []);
-
-  const lines = useMemo(() => code.split("\n"), [code]);
-  const fileName = `algorithm.${LANG_EXT[language] ?? "txt"}`;
+  const lines = useMemo(() => tokenizeLines(code, language), [code, language]);
+  const fileName = `solution.${LANG_EXT[language] ?? "txt"}`;
   const loading = stage !== "idle";
 
-  const handleVisualize = async () => {
-    if (!code.trim()) {
-      setError("Please paste some code to visualize");
-      return;
-    }
-
-    setStage("tracing");
-    setError(null);
-    setWarning(null);
-
-    try {
-      const result = await analyzeLocally(code, language, {
-        enablePythonTrace: true,
-        onPythonLoadStart: () => setStage("loading_python"),
-        testCase: testCase.trim() || undefined,
-      });
-      if ("error" in result) {
-        setError(result.error);
-        return;
-      }
-      setLastElapsed(result.elapsedMs);
-      if (result.warning) setWarning(result.warning);
-      onScenarioGenerated(result.scenario, {
-        elapsedMs: result.elapsedMs,
-        traceSteps: result.traceSteps,
-        warning: result.warning,
-        pattern: result.pattern,
-        patternHint: result.patternHint,
-        source: result.source,
-        techniques: result.techniques,
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setStage("idle");
+  const syncScroll = (el: HTMLTextAreaElement) => {
+    if (gutterRef.current) gutterRef.current.scrollTop = el.scrollTop;
+    if (layerRef.current) {
+      layerRef.current.scrollTop = el.scrollTop;
+      layerRef.current.scrollLeft = el.scrollLeft;
     }
   };
 
-  const loadDemo = (scenarioId: string) => {
-    const demo = scenarios.find((s) => s.id === scenarioId);
-    if (demo) {
-      onScenarioGenerated(demo, { elapsedMs: 0, traceSteps: demo.timeline.length });
-      setLastElapsed(0);
-      setError(null);
-      setWarning(null);
-    }
-  };
-
-  const loadSample = (sampleId: string) => {
-    const sample = CODE_SAMPLES.find((s) => s.id === sampleId);
-    if (sample) {
-      setCode(sample.code);
-      setLanguage(sample.language);
-      setError(null);
-      setWarning(null);
-    }
+  // Tab inserts two spaces instead of leaving the editor; every code editor
+  // people have used does this, and Python needs the indentation.
+  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== "Tab") return;
+    e.preventDefault();
+    const el = e.currentTarget;
+    const { selectionStart, selectionEnd } = el;
+    const next = code.slice(0, selectionStart) + "  " + code.slice(selectionEnd);
+    onCodeChange(next);
+    requestAnimationFrame(() => {
+      el.selectionStart = el.selectionEnd = selectionStart + 2;
+    });
   };
 
   return (
     <aside
-      className="flex flex-col h-full shrink-0 w-[min(420px,38vw)] min-w-[280px]"
-      style={{ background: "var(--mac-sidebar)", borderRight: "1px solid var(--mac-separator)" }}
+      className="flex flex-col h-full shrink-0 min-w-0"
+      style={{ width, background: "var(--mac-sidebar)", borderRight: "1px solid var(--mac-separator)" }}
     >
-      {/* Explorer header */}
-      <div
-        className="h-[35px] shrink-0 flex items-center px-4 text-[11px] font-semibold uppercase tracking-wide text-[var(--mac-text-2)]"
-        style={{ borderBottom: "1px solid var(--mac-separator)" }}
-      >
-        Explorer
-      </div>
-
-      {/* File tree stub */}
-      <div className="px-2 py-1 text-[13px]" style={{ borderBottom: "1px solid var(--mac-separator)" }}>
-        <div className="flex items-center gap-1.5 px-2 py-1 text-[var(--mac-text)]">
-          <ChevronDown />
-          <span className="font-code text-[12px]">src</span>
-        </div>
-        <div
-          className="flex items-center gap-1.5 pl-6 pr-2 py-1 ml-1 rounded-sm"
-          style={{ background: "var(--mac-accent)" }}
-        >
-          <FileIcon ext={LANG_EXT[language]} />
-          <span className="font-code text-[12px] text-[var(--mac-accent-ink)]">{fileName}</span>
-        </div>
-      </div>
-
-      {/* Editor tab bar */}
+      {/* Tab bar */}
       <div
         className="h-[35px] shrink-0 flex items-end overflow-hidden"
-        style={{ background: "var(--mac-inset)", borderBottom: "1px solid var(--mac-sidebar)" }}
+        style={{ background: "var(--mac-inset)", borderBottom: "1px solid var(--mac-separator)" }}
       >
         <div
-          className="h-full flex items-center gap-2 px-3 text-[13px] text-[var(--mac-text)] font-code"
-          style={{ background: "var(--mac-content)", borderRight: "1px solid var(--mac-sidebar)", borderTop: "1px solid var(--mac-accent)" }}
+          className="h-full flex items-center gap-2 px-3 text-[12.5px] text-[var(--mac-text)] font-code"
+          style={{
+            background: "var(--mac-content)",
+            borderRight: "1px solid var(--mac-separator)",
+            borderTop: "2px solid var(--mac-accent)",
+          }}
         >
           <FileIcon ext={LANG_EXT[language]} small />
           {fileName}
-          <button type="button" className="text-[var(--mac-text-2)] hover:text-[var(--mac-text)] text-[10px] ml-1" aria-label="Close tab">
-            ×
-          </button>
         </div>
+        <span className="ml-auto pr-3 pb-[9px] text-[10px] font-code text-[var(--mac-text-3)]">
+          {lastElapsed !== undefined && lastElapsed > 0 && (
+            <span className="text-[var(--mac-good)] mr-2">{lastElapsed}ms</span>
+          )}
+          {code.length.toLocaleString()} chars
+        </span>
       </div>
 
       {/* Toolbar */}
@@ -169,61 +144,55 @@ export function CodeEditor({ onScenarioGenerated, activeLine, coveredLines }: Co
       >
         <button
           type="button"
-          onClick={handleVisualize}
+          onClick={onVisualize}
           disabled={loading}
           className="mac-btn mac-btn-primary"
+          title="Run and trace (⌘↩ / Ctrl+Enter)"
         >
           {loading ? <Spinner /> : <PlayRunIcon />}
-          {stage === "loading_python"
-            ? "Loading Python…"
-            : stage === "tracing"
-              ? "Tracing…"
-              : "Visualize"}
+          {stage === "loading_python" ? "Loading Python…" : stage === "tracing" ? "Tracing…" : "Visualize"}
         </button>
 
         <select
           value=""
-          onChange={(e) => e.target.value && loadSample(e.target.value)}
+          onChange={(e) => e.target.value && onLoadSample(e.target.value)}
           className="mac-field mac-select"
           aria-label="Load sample"
         >
           <option value="">Samples…</option>
           {CODE_SAMPLES.map((s) => (
-            <option key={s.id} value={s.id}>{s.label}</option>
+            <option key={s.id} value={s.id}>
+              {s.label}
+            </option>
           ))}
         </select>
 
         <select
           value=""
-          onChange={(e) => e.target.value && loadDemo(e.target.value)}
+          onChange={(e) => e.target.value && onLoadDemo(e.target.value)}
           className="mac-field mac-select"
           aria-label="Load demo"
         >
           <option value="">Demos…</option>
           {scenarios.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
           ))}
         </select>
 
         <select
           value={language}
-          onChange={(e) => setLanguage(e.target.value)}
+          onChange={(e) => onLanguageChange(e.target.value)}
           className="mac-field mac-select"
           aria-label="Language"
         >
           <option value="python">Python</option>
           <option value="javascript">JavaScript</option>
+          <option value="typescript">TypeScript</option>
           <option value="java">Java</option>
           <option value="cpp">C++</option>
-          <option value="typescript">TypeScript</option>
         </select>
-
-        <span className="text-[10px] font-code text-[var(--mac-text-2)] ml-auto">
-          {lastElapsed !== null && (
-            <span className="text-[var(--mac-good)] mr-2">{lastElapsed}ms</span>
-          )}
-          {code.length.toLocaleString()} chars
-        </span>
       </div>
 
       {/* Test case input */}
@@ -231,15 +200,18 @@ export function CodeEditor({ onScenarioGenerated, activeLine, coveredLines }: Co
         className="shrink-0 flex items-center gap-2 px-3 py-2"
         style={{ background: "var(--mac-sidebar)", borderBottom: "1px solid var(--mac-separator)" }}
       >
-        <label htmlFor="test-case-input" className="text-[10px] font-code uppercase tracking-wider text-[var(--mac-text-2)] shrink-0">
+        <label
+          htmlFor="test-case-input"
+          className="text-[10px] font-code uppercase tracking-wider text-[var(--mac-text-2)] shrink-0"
+        >
           Test case
         </label>
         <input
           id="test-case-input"
           type="text"
           value={testCase}
-          onChange={(e) => setTestCase(e.target.value)}
-          placeholder="optional — [1,2,3,4], k=2  or  list=[3,2,0,-4], pos=1"
+          onChange={(e) => onTestCaseChange(e.target.value)}
+          placeholder="optional — [1,2,3,4], k=2  or  [[1,0],[0,1]]"
           className="mac-field flex-1 min-w-0 font-code"
           spellCheck={false}
         />
@@ -249,54 +221,87 @@ export function CodeEditor({ onScenarioGenerated, activeLine, coveredLines }: Co
       <div className="flex-1 min-h-0 flex overflow-hidden" style={{ background: "var(--mac-content)" }}>
         <div
           ref={gutterRef}
-          className="shrink-0 py-3 pr-2 text-right font-code text-[13px] leading-[20px] select-none overflow-hidden"
-          style={{ color: "var(--mac-text-2)", width: 48, borderRight: "1px solid var(--mac-separator)" }}
+          className="shrink-0 pr-2 text-right font-code text-[12px] select-none overflow-hidden"
+          style={{
+            color: "var(--mac-text-3)",
+            width: 44,
+            paddingTop: PAD_Y,
+            paddingBottom: PAD_Y,
+            lineHeight: `${LINE_HEIGHT}px`,
+            borderRight: "1px solid var(--mac-separator)",
+          }}
           aria-hidden
         >
-          {mounted &&
-            lines.map((_, i) => {
-              const isActive = activeLine === i + 1;
-              const isCovered = !isActive && coveredLines?.includes(i + 1);
-              return (
-                <div
-                  key={i}
-                  style={
-                    isActive
-                      ? { color: "var(--mac-content)", background: "var(--mac-warn)", fontWeight: 600 }
-                      : isCovered
-                        ? {
-                            color: "var(--mac-warn)",
-                            // `var(--x)22` is not a colour — the alpha has to be
-                            // mixed in, not concatenated onto the token.
-                            background: "color-mix(in srgb, var(--mac-warn) 16%, transparent)",
-                          }
-                        : undefined
-                  }
-                >
-                  {i + 1}
-                </div>
-              );
-            })}
+          {lines.map((_, i) => {
+            const isActive = activeLine === i + 1;
+            const isCovered = !isActive && coveredLines?.includes(i + 1);
+            return (
+              <div
+                key={i}
+                style={
+                  isActive
+                    ? { color: "var(--mac-content)", background: "var(--mac-warn)", fontWeight: 600 }
+                    : isCovered
+                      ? {
+                          color: "var(--mac-warn)",
+                          background: "color-mix(in srgb, var(--mac-warn) 16%, transparent)",
+                        }
+                      : undefined
+                }
+              >
+                {i + 1}
+              </div>
+            );
+          })}
         </div>
 
-        <textarea
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          onScroll={(e) => {
-            // The gutter is a separate element, so it has to follow the
-            // textarea or the highlighted number drifts off its line.
-            if (gutterRef.current) {
-              gutterRef.current.scrollTop = e.currentTarget.scrollTop;
-            }
-          }}
-          spellCheck={false}
-          wrap="off"
-          className="flex-1 w-full h-full resize-none font-code text-[13px] leading-[20px] text-[var(--mac-text)] bg-transparent px-3 py-3 outline-none"
-          placeholder="// Paste your algorithm here…"
-          // `pre` keeps one source line on one visual row; without it a wrapped
-          // line pushes the code out of step with the gutter numbering.
-          style={{ tabSize: 2, whiteSpace: "pre", overflowX: "auto" }}
-        />
+        <div className="relative flex-1 min-w-0">
+          {/* Colour layer: same font, padding and line grid as the textarea,
+              so the transparent text above lands exactly on the coloured text. */}
+          <pre
+            ref={layerRef}
+            aria-hidden
+            className="absolute inset-0 m-0 overflow-hidden font-code text-[13px] pointer-events-none"
+            style={{
+              padding: `${PAD_Y}px 12px`,
+              lineHeight: `${LINE_HEIGHT}px`,
+              tabSize: 2,
+              whiteSpace: "pre",
+            }}
+          >
+            {lines.map((tokens, i) => (
+              <Line
+                key={i}
+                tokens={tokens}
+                active={activeLine === i + 1}
+                covered={!!coveredLines?.includes(i + 1)}
+              />
+            ))}
+          </pre>
+
+          <textarea
+            ref={textRef}
+            value={code}
+            onChange={(e) => onCodeChange(e.target.value)}
+            onScroll={(e) => syncScroll(e.currentTarget)}
+            onKeyDown={onKeyDown}
+            spellCheck={false}
+            wrap="off"
+            autoCapitalize="off"
+            autoCorrect="off"
+            className="relative w-full h-full resize-none font-code text-[13px] bg-transparent outline-none"
+            placeholder="// Paste your solution here…"
+            style={{
+              padding: `${PAD_Y}px 12px`,
+              lineHeight: `${LINE_HEIGHT}px`,
+              tabSize: 2,
+              whiteSpace: "pre",
+              overflow: "auto",
+              color: "transparent",
+              caretColor: "var(--mac-text)",
+            }}
+          />
+        </div>
       </div>
 
       <AnimatePresence>
@@ -306,7 +311,11 @@ export function CodeEditor({ onScenarioGenerated, activeLine, coveredLines }: Co
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             className="shrink-0 px-3 py-2 text-[11px] font-code"
-            style={{ background: "#3a3a1e", borderTop: "1px solid var(--mac-separator)", color: "var(--mac-warn)" }}
+            style={{
+              background: "var(--mac-warn-soft)",
+              borderTop: "1px solid var(--mac-separator)",
+              color: "var(--mac-warn)",
+            }}
           >
             {warning}
           </motion.div>
@@ -317,13 +326,17 @@ export function CodeEditor({ onScenarioGenerated, activeLine, coveredLines }: Co
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             className="shrink-0 overflow-hidden flex flex-col"
-            style={{ background: "#5a1d1d", borderTop: "1px solid var(--mac-separator)", maxHeight: "40%" }}
+            style={{
+              background: "var(--mac-bad-soft)",
+              borderTop: "1px solid var(--mac-separator)",
+              maxHeight: "40%",
+            }}
           >
             <div className="px-3 py-2 text-[12px] font-code text-[var(--mac-bad)] flex items-start justify-between gap-2">
               <span className="flex-1 break-words">{error}</span>
               <button
                 type="button"
-                onClick={() => setError(null)}
+                onClick={onDismissError}
                 className="text-[var(--mac-bad)] hover:text-[var(--mac-text)] text-[14px] leading-none shrink-0"
                 aria-label="Dismiss"
               >
@@ -337,24 +350,47 @@ export function CodeEditor({ onScenarioGenerated, activeLine, coveredLines }: Co
   );
 }
 
-function ChevronDown() {
+function Line({ tokens, active, covered }: { tokens: Token[]; active: boolean; covered: boolean }) {
   return (
-    <svg width="10" height="10" viewBox="0 0 10 10" fill="var(--mac-text)">
-      <path d="M2 3l3 3 3-3" stroke="currentColor" fill="none" strokeWidth="1.2" />
-    </svg>
+    <div
+      style={{
+        // A full-width band for the executing line; it has to extend past the
+        // text so a short line is banded as clearly as a long one.
+        background: active
+          ? "color-mix(in srgb, var(--mac-warn) 18%, transparent)"
+          : covered
+            ? "color-mix(in srgb, var(--mac-warn) 7%, transparent)"
+            : undefined,
+        margin: "0 -12px",
+        padding: "0 12px",
+        minHeight: LINE_HEIGHT,
+      }}
+    >
+      {tokens.map((t, i) => (
+        <span key={i} style={{ color: TOKEN_COLOR[t.type] }}>
+          {t.text}
+        </span>
+      ))}
+    </div>
   );
 }
 
 function FileIcon({ ext, small }: { ext?: string; small?: boolean }) {
   const size = small ? 14 : 16;
   const color =
-    ext === "py" ? "#ffd43b" :
-    ext === "js" || ext === "ts" ? "#f7df1e" :
-    ext === "java" ? "#f89820" : "#519aba";
+    ext === "py"
+      ? "#3b82c4"
+      : ext === "js"
+        ? "#d3a728"
+        : ext === "ts"
+          ? "#3178c6"
+          : ext === "java"
+            ? "#f89820"
+            : "#519aba";
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-      <path d="M3 1h7l3 3v11H3V1z" stroke={color} strokeWidth="1" fill="none" />
-      <path d="M10 1v3h3" stroke={color} strokeWidth="1" fill="none" />
+      <path d="M3 1h7l3 3v11H3V1z" stroke={color} strokeWidth="1.2" fill="none" />
+      <path d="M10 1v3h3" stroke={color} strokeWidth="1.2" fill="none" />
     </svg>
   );
 }
@@ -369,7 +405,15 @@ function PlayRunIcon() {
 
 function Spinner() {
   return (
-    <svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className="animate-spin"
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83" strokeLinecap="round" />
     </svg>
   );

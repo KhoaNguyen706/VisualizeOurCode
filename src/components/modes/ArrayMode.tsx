@@ -17,6 +17,20 @@ const SW_COLOR = "#0a84ff"; // sliding window — blue
 const TP_COLOR = "#ff9f0a"; // two pointers — orange
 const BS_COLOR = "#bf5af2"; // binary search — purple
 
+const INDEX_NAMES = new Set([
+  "i", "j", "k", "l", "r", "p", "q", "lo", "hi", "low", "high", "left", "right", "mid",
+  "start", "end", "idx", "index", "pos", "cur", "curr", "slow", "fast", "head", "tail",
+  "front", "back", "write", "read", "first", "last", "a", "b",
+]);
+
+/** Whether a variable's name says it is a position in the array. */
+function looksLikeIndex(label: string): boolean {
+  const name = label.toLowerCase();
+  if (INDEX_NAMES.has(name)) return true;
+  if (/^(i|j|k|l|r|p)\d+$/.test(name)) return true;
+  return /(idx|index|ptr|pointer|pos|cursor)$/.test(name);
+}
+
 function isLeftPointerLabel(label: string): boolean {
   return ["left", "l", "lo", "low", "i"].includes(label);
 }
@@ -117,8 +131,10 @@ export function ArrayMode({ frame, compact = false }: ArrayModeProps) {
   } else {
     for (const [label, val] of Object.entries(activePointers)) {
       if (typeof val !== "number" || val < 0) continue;
-      // Call depth is a property of the recursion, not a position in the array.
-      if (label === "depth") continue;
+      // Every integer in scope arrives here. Only the ones named like an index
+      // get an arrow: `complement = 2` is a value, and an arrow at cell 2 would
+      // say it is a position.
+      if (!looksLikeIndex(label)) continue;
       if (isLeftPointerLabel(label)) registerPtr(val, label, "top");
       else if (isRightPointerLabel(label)) registerPtr(val, label, "bottom");
       else if (label === "mid") registerPtr(val, "mid", "top");

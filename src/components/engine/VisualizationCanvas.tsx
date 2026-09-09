@@ -49,6 +49,13 @@ const LEAD_ORDER: Record<VisualizationTechnique, Section[]> = {
   generic: BY_STRUCTURE,
 };
 
+/** The engine's status, in the reader's words: what this beat is. */
+const STATUS_WORD: Record<TimelineFrame["statusType"], string> = {
+  EXPLORE: "running",
+  SUCCESS: "return",
+  FAIL: "stopped",
+};
+
 function isTechnique(v: unknown): v is VisualizationTechnique {
   return typeof v === "string" && v in TECHNIQUE_LABELS;
 }
@@ -210,14 +217,26 @@ export function VisualizationCanvas({ frame }: VisualizationCanvasProps) {
             animate={{ opacity: 1 }}
             className={`px-2 py-0.5 text-[10px] font-code uppercase tracking-wider border ${colors.bg} ${colors.border} ${colors.text}`}
           >
-            {frame.statusType}
+            {STATUS_WORD[frame.statusType]}
           </motion.span>
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col gap-6 justify-center">
+      {/* Top-aligned: content that re-centres as its height changes jumps
+          under the reader's eye on every step. */}
+      <div className="flex flex-col gap-4">
         {sections.map((section) => (
-          <section key={section}>{render(section)}</section>
+          <section
+            key={section}
+            className={several ? "rounded-[10px] px-4 pt-3 pb-4" : ""}
+            style={
+              several
+                ? { background: "var(--mac-content)", border: "1px solid var(--mac-separator)" }
+                : undefined
+            }
+          >
+            {render(section)}
+          </section>
         ))}
       </div>
     </div>

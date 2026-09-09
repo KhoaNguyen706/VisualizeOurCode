@@ -1,35 +1,71 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Appearance = "system" | "light" | "dark";
 
 const STORAGE_KEY = "voc-appearance";
 
-export function Header() {
+interface HeaderProps {
+  /** The link that reproduces the editor's current contents. */
+  getShareUrl: () => string;
+}
+
+export function Header({ getShareUrl }: HeaderProps) {
   const [appearance, setAppearance] = useState<Appearance>("system");
   const [mounted, setMounted] = useState(false);
+  const [shared, setShared] = useState<"idle" | "copied" | "failed">("idle");
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setMounted(true);
-    const saved = window.localStorage.getItem(STORAGE_KEY) as Appearance | null;
-    if (saved === "light" || saved === "dark") setAppearance(saved);
+    try {
+      const saved = window.localStorage.getItem(STORAGE_KEY) as Appearance | null;
+      if (saved === "light" || saved === "dark") setAppearance(saved);
+    } catch {
+      /* storage may be unavailable */
+    }
   }, []);
 
   useEffect(() => {
     if (!mounted) return;
     const root = document.documentElement;
-    if (appearance === "system") {
-      root.removeAttribute("data-theme");
-      window.localStorage.removeItem(STORAGE_KEY);
-    } else {
-      root.setAttribute("data-theme", appearance);
-      window.localStorage.setItem(STORAGE_KEY, appearance);
+    try {
+      if (appearance === "system") {
+        root.removeAttribute("data-theme");
+        window.localStorage.removeItem(STORAGE_KEY);
+      } else {
+        root.setAttribute("data-theme", appearance);
+        window.localStorage.setItem(STORAGE_KEY, appearance);
+      }
+    } catch {
+      /* ignore */
     }
   }, [appearance, mounted]);
 
   const next = (): Appearance =>
     appearance === "system" ? "light" : appearance === "light" ? "dark" : "system";
+
+  const share = async () => {
+    const url = getShareUrl();
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(url);
+      ok = true;
+    } catch {
+      ok = false;
+    }
+    // The address bar carries the link too, so a failed clipboard still has
+    // a copyable URL on screen.
+    try {
+      window.history.replaceState(null, "", url);
+    } catch {
+      /* ignore */
+    }
+    setShared(ok ? "copied" : "failed");
+    if (resetTimer.current) clearTimeout(resetTimer.current);
+    resetTimer.current = setTimeout(() => setShared("idle"), 2000);
+  };
 
   return (
     <header
@@ -42,7 +78,7 @@ export function Header() {
       <TrafficLights />
 
       <div
-        className="absolute left-1/2 -translate-x-1/2 flex items-baseline gap-2"
+        className="absolute left-1/2 -translate-x-1/2 flex items-baseline gap-2 pointer-events-none"
         style={{ color: "var(--mac-text)" }}
       >
         <span className="text-[13px] font-semibold">VisualizeOurCode</span>
@@ -51,7 +87,17 @@ export function Header() {
         </span>
       </div>
 
-      <div className="ml-auto flex items-center">
+      <div className="ml-auto flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => void share()}
+          className="mac-btn"
+          style={{ height: 22, padding: "0 9px", fontSize: 11 }}
+          title="Copy a link that opens this code"
+        >
+          <LinkIcon />
+          {shared === "copied" ? "Link copied" : shared === "failed" ? "Link in address bar" : "Share"}
+        </button>
         <button
           type="button"
           onClick={() => setAppearance(next())}
@@ -73,6 +119,14 @@ const APPEARANCE_LABEL: Record<Appearance, string> = {
   light: "Light",
   dark: "Dark",
 };
+
+function LinkIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+      <path d="M6.5 9.5l3-3M7 4.5l1.5-1.5a2.5 2.5 0 013.5 3.5L10.5 8M9 11.5l-1.5 1.5a2.5 2.5 0 01-3.5-3.5L5.5 8" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 function TrafficLights() {
   return (
