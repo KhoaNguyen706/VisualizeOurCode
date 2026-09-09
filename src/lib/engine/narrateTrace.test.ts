@@ -170,3 +170,60 @@ describe("the method receiver is not a data structure", () => {
     expect(f.mode).toBe("HASH_MAP");
   });
 });
+
+describe("call tree", () => {
+  const call = (
+    line: number,
+    id: number,
+    parent: number | undefined,
+    n: number,
+    extra: Partial<TraceStep> = {}
+  ): TraceStep => ({
+    line,
+    vars: { n },
+    callId: id,
+    parentCallId: parent,
+    fnName: "fib",
+    args: { n },
+    depth: parent === undefined ? 1 : 2,
+    ...extra,
+  });
+
+  it("grows a tree of calls as a recursion descends and marks calls as they return", () => {
+    const src = "function fib(n) {\n  if (n < 2) {\n    return n;\n  }\n  return fib(n - 1) + fib(n - 2);\n}";
+    const steps: TraceStep[] = [
+      call(2, 1, undefined, 2, { kind: "condition", condResult: false, condLabel: "n < 2" }),
+      call(5, 1, undefined, 2, { kind: "return" }),
+      call(2, 2, 1, 1, { kind: "condition", condResult: true, condLabel: "n < 2" }),
+      call(3, 2, 1, 1, { kind: "return", returnValue: 1 }),
+      call(2, 3, 1, 0, { kind: "condition", condResult: true, condLabel: "n < 2" }),
+      call(3, 3, 1, 0, { kind: "return", returnValue: 0 }),
+    ];
+    const frames = narrateTrace(steps, src);
+
+    expect(frames[0].structures.treeData.map((n) => n.value)).toEqual(["fib(2)"]);
+    expect(frames[0].activePointers.current).toBe("call-1");
+    expect(frames[0].activePointers.depth).toBe(1);
+
+    expect(frames[3].structures.treeData.map((n) => [n.value, n.note, n.done])).toEqual([
+      ["fib(2)", undefined, false],
+      ["fib(1)", "→ 1", true],
+    ]);
+    expect(frames[3].highlightedElements).toEqual(["call-1", "call-2"]);
+
+    const last = frames[5].structures.treeData;
+    expect(last.map((n) => n.parent)).toEqual([null, "call-1", "call-1"]);
+    expect(last[0].children).toEqual(["call-2", "call-3"]);
+  });
+
+  it("draws no tree for a helper that is merely called from a loop", () => {
+    const steps: TraceStep[] = [
+      { line: 1, vars: { total: 0 }, callId: 1, fnName: "main", args: {}, depth: 1 },
+      { line: 2, vars: { x: 1 }, callId: 2, parentCallId: 1, fnName: "helper", args: { x: 1 }, depth: 2 },
+      { line: 1, vars: { total: 2 }, callId: 1, fnName: "main", args: {}, depth: 1 },
+    ];
+    const frames = narrateTrace(steps, "total = 0\nx = 1");
+    expect(frames.every((f) => f.structures.treeData.length === 0)).toBe(true);
+    expect(frames[0].activePointers.current).toBeUndefined();
+  });
+});

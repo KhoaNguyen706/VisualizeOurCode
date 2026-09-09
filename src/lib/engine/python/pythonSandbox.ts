@@ -132,6 +132,13 @@ def _snapshot(loc):
     for k, v in loc.items():
         if k.startswith("__") and k.endswith("__"):
             continue
+        # A nested def is a name in scope, not state. Snapshotting it through
+        # its (empty) __dict__ drew every helper as an empty hash map.
+        if callable(v):
+            continue
+        # The receiver of a LeetCode method is an empty object that says nothing.
+        if k == "self" and not getattr(v, "__dict__", None):
+            continue
         out[k] = _safe(v)
     return out
 
@@ -139,6 +146,7 @@ class _Stop(Exception):
     pass
 
 _call_seq = [0]
+_active = []
 
 def _tracer(frame, event, arg):
     if frame.f_code.co_filename != "<user>":
@@ -157,6 +165,22 @@ def _tracer(frame, event, arg):
     _call_seq[0] += 1
     _fid = _call_seq[0]
 
+    # The call tree: who called this frame, how deep it sits, and the arguments
+    # it was entered with -- everything a recursion needs to be drawn as the
+    # tree of calls it really made.
+    _parent = _active[-1] if _active else None
+    _active.append(_fid)
+    _depth = len(_active)
+    _co = frame.f_code
+    _fn = _co.co_name
+    _args = {}
+    for _n in _co.co_varnames[:_co.co_argcount + _co.co_kwonlyargcount]:
+        if _n in ("self", "cls"):
+            continue
+        if _n in frame.f_locals:
+            _args[_n] = _safe(frame.f_locals[_n])
+    _raised = [False]
+
     def _local(frame, event, arg):
         if event == "line":
             if len(_steps) >= __STEP_LIMIT__:
@@ -166,11 +190,27 @@ def _tracer(frame, event, arg):
             _steps.append({
                 "line": frame.f_lineno,
                 "frame": _fid,
+                "parent": _parent,
+                "fn": _fn,
+                "args": _args,
+                "depth": _depth,
                 "vars": _snapshot(frame.f_locals),
             })
+        elif event == "exception":
+            _raised[0] = True
         elif event == "return":
-            if _steps:
-                _steps[-1]["returnValue"] = _safe(arg)
+            # The value goes on this frame's own last line. The last step
+            # overall may belong to a callee that ran inside the return
+            # expression -- "return go(n - 1) + go(n - 2)" -- and stamping it
+            # there credited the child with its parent's result. A frame
+            # leaving on an exception returns nothing worth stamping.
+            if not _raised[0]:
+                for _s in reversed(_steps):
+                    if _s["frame"] == _fid:
+                        _s["returnValue"] = _safe(arg)
+                        break
+            if _active and _active[-1] == _fid:
+                _active.pop()
         return _local
 
     return _local

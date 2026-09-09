@@ -105,15 +105,26 @@ describe("condenseTrace", () => {
   });
 
   it("opens a beat for every cell a DP table fills", () => {
-    const source = ["def dp(n):", "    t = [[0, 0]]", "    t[0][0] = 5", "    t[0][1] = 9"].join("\n");
+    const source = ["def solve(n):", "    dp = [[0, 0]]", "    dp[0][0] = 5", "    dp[0][1] = 9"].join("\n");
     const steps: TraceStep[] = [
-      { line: 2, kind: "mutation", vars: { t: [[0, 0]] } },
-      { line: 3, kind: "mutation", vars: { t: [[5, 0]] } },
-      { line: 4, kind: "mutation", vars: { t: [[5, 9]] } },
+      { line: 2, kind: "mutation", vars: { dp: [[0, 0]] } },
+      { line: 3, kind: "mutation", vars: { dp: [[5, 0]] } },
+      { line: 4, kind: "mutation", vars: { dp: [[5, 9]] } },
     ];
     const beats = run(source, steps);
     expect(beats).toHaveLength(3);
     expect(beats[2].changedCells).toEqual(["0,1"]);
+  });
+
+  it("does not mistake a single collected result for a table", () => {
+    // res = [[2, 2, 3]] is one combination a backtracker gathered, not a 1x3 grid.
+    const source = ["def solve(n):", "    res = []", "    res.append([2, 2, 3])"].join("\n");
+    const steps: TraceStep[] = [
+      { line: 2, kind: "mutation", vars: { res: [] } },
+      { line: 3, kind: "mutation", vars: { res: [[2, 2, 3]] } },
+    ];
+    const beats = run(source, steps);
+    expect(beats.every((b) => (b.structures.gridData?.length ?? 0) === 0)).toBe(true);
   });
 
   it("does not spend a beat on lines that change nothing visible", () => {

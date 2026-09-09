@@ -117,6 +117,8 @@ export function ArrayMode({ frame, compact = false }: ArrayModeProps) {
   } else {
     for (const [label, val] of Object.entries(activePointers)) {
       if (typeof val !== "number" || val < 0) continue;
+      // Call depth is a property of the recursion, not a position in the array.
+      if (label === "depth") continue;
       if (isLeftPointerLabel(label)) registerPtr(val, label, "top");
       else if (isRightPointerLabel(label)) registerPtr(val, label, "bottom");
       else if (label === "mid") registerPtr(val, "mid", "top");

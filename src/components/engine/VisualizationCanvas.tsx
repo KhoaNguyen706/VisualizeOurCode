@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import type { TimelineFrame, VisualizationMode } from "@/lib/types";
+import type { TimelineFrame } from "@/lib/types";
 import { statusColors } from "@/lib/theme";
 import { ArrayMode } from "@/components/modes/ArrayMode";
 import { HashMapMode } from "@/components/modes/HashMapMode";
@@ -16,13 +16,6 @@ import type { VisualizationTechnique } from "@/lib/engine/technique/types";
 interface VisualizationCanvasProps {
   frame: TimelineFrame;
 }
-
-const MODE_LABELS: Record<VisualizationMode, string> = {
-  ARRAY: "Array",
-  HASH_MAP: "Hash Map",
-  LINKED_LIST: "Linked List",
-  TREE: "Tree / Graph",
-};
 
 type Section = "container" | "grid" | "tree" | "list" | "array" | "maps" | "result";
 
@@ -92,6 +85,26 @@ export function VisualizationCanvas({ frame }: VisualizationCanvasProps) {
   sections.sort((a, b) => order.indexOf(a) - order.indexOf(b));
   const several = sections.length > 1;
 
+  // What is actually on the canvas, in the order it appears.
+  const drawn = sections.map((section) => {
+    switch (section) {
+      case "container":
+        return s.containerData?.kind === "queue" ? "Queue" : s.containerData?.kind === "stack" ? "Stack" : "Set";
+      case "array":
+        return "Array";
+      case "maps":
+        return lead === "hash_set" ? "Set" : "Hash Map";
+      case "result":
+        return "Result";
+      case "list":
+        return "Linked List";
+      case "tree":
+        return treeHeading(lead);
+      case "grid":
+        return lead === "dp_grid" ? "DP Table" : "Grid";
+    }
+  });
+
   const heading = (text: string, accent = false) =>
     several ? (
       <h3
@@ -153,13 +166,13 @@ export function VisualizationCanvas({ frame }: VisualizationCanvasProps) {
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between mb-3 gap-3">
         <div className="flex gap-1.5 flex-wrap">
-          {modes.map((mode) => (
+          {drawn.map((label, i) => (
             <span
-              key={mode}
+              key={`${label}-${i}`}
               className="px-2 py-0.5 text-[10px] font-code uppercase tracking-wider text-[var(--mac-text-2)]"
               style={{ background: "var(--mac-inset)", border: "1px solid var(--mac-separator)" }}
             >
-              {MODE_LABELS[mode]}
+              {label}
             </span>
           ))}
         </div>

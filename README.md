@@ -19,6 +19,9 @@ Free, no account, no API key, no AI. Everything runs on your machine.
   and the queue / stack / set a traversal drives itself from
 - **Step slider** — scrub through trace history with live variable watch panel, with
   the executing line highlighted in the editor gutter
+- **The algorithm leads the picture** — a BFS shows its queue over the grid, a DP its
+  table, a recursion the tree of calls it actually made; everything else the code
+  builds is drawn after it, and nothing recognised means "draw what the code holds"
 - **Pattern hints** — when your code resembles a known problem, the textbook approach
   is offered *beside* your trace instead of replacing it
 - **Built-in demos** — Two Sum, Reverse Linked List, Combination Sum (zero latency)
@@ -70,6 +73,27 @@ screen. It stays free and keyless: the runtime downloads once and the browser ca
 Pattern tracers still cover languages that cannot run here (Java, C++), where they are
 labelled as the textbook walkthrough rather than a trace of your code.
 
+### The algorithm leads the picture
+
+The trace decides *what happened*; the source decides *what to draw first*.
+`inferTechniquesFromCode()` reads every approach the code combines, lead first, and
+the canvas orders its layers by the lead:
+
+| Your code looks like | Drawn first | Then |
+|---|---|---|
+| BFS (`popleft`, `shift`) | the queue, then the grid or graph it walks | any set or map it keeps |
+| DFS, backtracking, or any function that calls itself | the tree of calls it actually made — each node its real arguments, each finished call its return value | the stack it pushes and pops, the array it chooses from |
+| Dynamic programming (`dp[`, `memo`) | the table, cells lit as they fill | the memo dict |
+| Two pointers, sliding window, binary search | the array with the pointers or window on it | maps, sets |
+| Hash map / hash set | the array being scanned and the map beside it | |
+| Nothing recognised | whatever the code holds — arrays, dicts, lists, grids, queues | |
+
+Supporting approaches are named as chips beside the lead one ("BFS + Hash Set"), so
+a solution that combines several is read as the combination it is. The call tree is
+built from the trace, not guessed: both sandboxes tag every step with the call it ran
+in, its parent, the arguments it was entered with and its depth, and a wrong recursion
+draws its wrong tree.
+
 ### Execution budgets
 
 Three independent budgets bound every run, enforced in `runSandbox()`:
@@ -112,6 +136,9 @@ CI runs typecheck → test → build on every push and pull request.
   sense, and untrusted third-party code should not be pasted in.
 - **Unbounded recursion** is not covered by the budgets above; it terminates via
   the engine's own stack overflow and surfaces as a normal execution error.
+- **Call boundaries in JavaScript need a named function whose body closes on its
+  own line** — `function f(a) {` or `const f = (a) => {`. A one-line function or a
+  class method is still traced, but it does not appear in the call tree.
 - Java and C++ are matched to **pattern tracers**; only JavaScript/TypeScript and
   Python are genuinely executed.
 - **The Python tier costs one download.** Pyodide is fetched from a CDN on first use

@@ -15,6 +15,10 @@ export interface TreeNode {
   parent: string | null;
   x?: number;
   y?: number;
+  /** A short annotation under the node — what a call returned, say. */
+  note?: string;
+  /** True once the call this node stands for has finished. */
+  done?: boolean;
 }
 
 /**

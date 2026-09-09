@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectDeclaredNames, injectLoopGuards, instrumentCode } from "./instrumentCode";
+import { collectDeclaredNames, findFunctionSpans, injectLoopGuards, instrumentCode } from "./instrumentCode";
 
 describe("collectDeclaredNames", () => {
   it("discovers function parameters", () => {
@@ -178,5 +178,30 @@ describe("instrumentCode", () => {
   it("preserves the original line count for untouched lines", () => {
     const src = "function f() {\n  const a = 1;\n}";
     expect(instrumentCode(src).code).toContain("function f() {");
+  });
+});
+
+describe("call boundaries", () => {
+  it("wraps a named function body in enter/exit so calls can be told apart", () => {
+    const src = "function fib(n) {\n  if (n < 2) return n;\n  return fib(n - 1) + fib(n - 2);\n}";
+    const { code } = instrumentCode(src);
+    expect(code).toContain('__enter__("fib", { "n": n }); try {');
+    expect(code).toContain("} finally { __exit__(); }");
+    expect(findFunctionSpans(src.split("\n"))).toEqual([{ name: "fib", params: ["n"], open: 0, close: 3 }]);
+  });
+
+  it("wraps arrow and function-expression bindings, and nested helpers", () => {
+    const src = "const solve = (nums, k) => {\n  var go = function (i) {\n    return i;\n  };\n  return go(k);\n};";
+    const spans = findFunctionSpans(src.split("\n"));
+    expect(spans.map((s) => [s.name, s.params, s.open, s.close])).toEqual([
+      ["solve", ["nums", "k"], 0, 5],
+      ["go", ["i"], 1, 3],
+    ]);
+  });
+
+  it("leaves a one-line function alone rather than guess where it ends", () => {
+    const src = "function id(x) { return x; }";
+    expect(findFunctionSpans(src.split("\n"))).toEqual([]);
+    expect(instrumentCode(src).code).not.toContain("__enter__");
   });
 });

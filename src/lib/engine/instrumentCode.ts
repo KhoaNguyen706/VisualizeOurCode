@@ -410,6 +410,90 @@ function previousCodeLine(lines: string[], index: number): string | null {
 }
 
 /**
+ * `function name(a, b) {` / `const name = (a, b) => {` / `var name = function (a) {`
+ * — a named function whose body opens at the end of its own line.
+ */
+const FN_HEADER_RE =
+  /^\s*(?:export\s+)?(?:(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)\s*\(([^)]*)\)|(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function\s*\*?\s*\(([^)]*)\)|\(([^)]*)\)\s*=>|([A-Za-z_$][\w$]*)\s*=>))\s*\{\s*(?:\/\/.*)?$/;
+
+export interface FunctionSpan {
+  name: string;
+  /** Parameter names, in order; destructured parameters are left out. */
+  params: string[];
+  /** Line index of the header. */
+  open: number;
+  /** Line index of the `}` that closes the body. */
+  close: number;
+}
+
+function paramNames(raw: string): string[] {
+  return raw
+    .split(",")
+    .map((p) => p.trim().split(/[=:]/)[0].replace(/^\.\.\./, "").trim())
+    .filter((p) => /^[A-Za-z_$][\w$]*$/.test(p));
+}
+
+/**
+ * Line index of the `}` closing the block opened on `start`, or -1. Skips
+ * string literals and `//` comments so a brace in a string is not counted.
+ */
+function findBlockEnd(lines: string[], start: number): number {
+  let depth = 0;
+  let quote: string | null = null;
+  let opened = false;
+
+  for (let i = start; i < lines.length; i += 1) {
+    const line = lines[i];
+    for (let k = 0; k < line.length; k += 1) {
+      const ch = line[k];
+      if (quote) {
+        if (ch === "\\") k += 1;
+        else if (ch === quote) quote = null;
+        continue;
+      }
+      if (ch === "/" && line[k + 1] === "/") break;
+      if (ch === '"' || ch === "'" || ch === "`") {
+        quote = ch;
+        continue;
+      }
+      if (ch === "{") {
+        depth += 1;
+        opened = true;
+      } else if (ch === "}") {
+        depth -= 1;
+        if (opened && depth === 0) return i;
+      }
+    }
+  }
+  return -1;
+}
+
+/**
+ * Every named function whose body can be wrapped: the header opens its block
+ * at the end of its own line and the block closes on a line of its own. A
+ * one-line `function f(x) { return x; }` is left alone rather than risked.
+ */
+export function findFunctionSpans(lines: string[]): FunctionSpan[] {
+  const out: FunctionSpan[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const m = lines[i].match(FN_HEADER_RE);
+    if (!m) continue;
+    const name = m[1] ?? m[3];
+    const raw = m[2] ?? m[4] ?? m[5] ?? m[6] ?? "";
+    const close = findBlockEnd(lines, i);
+    if (close <= i || !/^\s*\}/.test(lines[close])) continue;
+    out.push({ name, params: paramNames(raw), open: i, close });
+  }
+  return out;
+}
+
+/** `__enter__("fib", { "n": n }); try {` — opens the call, and the block the exit closes. */
+function enterStmt(span: FunctionSpan): string {
+  const args = span.params.map((p) => `${JSON.stringify(p)}: ${p}`).join(", ");
+  return `__enter__(${JSON.stringify(span.name)}, { ${args} }); try {`;
+}
+
+/**
  * Inject `__trace__(line, snapshot)` around state changes and `__guard__()`
  * into loop conditions.
  *
@@ -433,11 +517,31 @@ export function instrumentCode(rawCode: string): InstrumentResult {
     traceKinds.push({ line: lineNum, kind });
   };
 
+  // Call boundaries: every named function body is wrapped so the sandbox can
+  // tell which call each step ran in — what lets a recursion be drawn as the
+  // tree of calls it made. The `try` opens after the header and the
+  // `finally` closes before the body's own `}`, so a return, a fall-off and
+  // a throw all leave the call.
+  const spans = findFunctionSpans(lines);
+  const opensAfter = new Map<number, FunctionSpan[]>();
+  const closesBefore = new Map<number, number>();
+  for (const span of spans) {
+    opensAfter.set(span.open, [...(opensAfter.get(span.open) ?? []), span]);
+    closesBefore.set(span.close, (closesBefore.get(span.close) ?? 0) + 1);
+  }
+
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i];
     const lineNum = i + 1;
     const trimmed = rawLine.trim();
     const indent = getIndent(rawLine);
+
+    for (let n = closesBefore.get(i) ?? 0; n > 0; n -= 1) {
+      output.push(`${indent}} finally { __exit__(); }`);
+    }
+    for (const span of opensAfter.get(i - 1) ?? []) {
+      output.push(`${indent}${enterStmt(span)}`);
+    }
 
     if (shouldSkipLine(trimmed)) {
       output.push(rawLine);

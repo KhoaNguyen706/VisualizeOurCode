@@ -1,28 +1,110 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { TimelineFrame, TreeNode } from "@/lib/types";
-import { statusColors } from "@/lib/theme";
 
 interface TreeModeProps {
   frame: TimelineFrame;
 }
 
-const NODE_R = 28;
-const LEVEL_H = 90;
-const SIBLING_GAP = 80;
+const CIRCLE_R = 28;
+const PILL_H = 30;
+const MAX_PILL_W = 240;
+/** Past this many calls the shared function name moves to a caption. */
+const COMPACT_FROM = 12;
+
+interface Metrics {
+  /** Rounded rectangles for call labels; circles for short values. */
+  pill: boolean;
+  width: number;
+  height: number;
+  siblingGap: number;
+  levelHeight: number;
+  maxChars: number;
+}
+
+interface Labelled {
+  node: TreeNode;
+  /** What the node shows — the value, or the arguments alone in a big call tree. */
+  label: string;
+}
+
+/**
+ * A call tree names the same function on nearly every node — the outer
+ * function sits at the root, the recursive helper fills the rest. Past a dozen
+ * calls that repetition is the widest thing on screen, so the dominant name is
+ * said once as a caption and its nodes keep only what differs: the arguments.
+ */
+function labelNodes(nodes: TreeNode[]): { items: Labelled[]; caption?: string } {
+  const labels = nodes.map((n) => String(n.value));
+  const heads = labels.map((l) => l.match(/^([A-Za-z_$][\w$]*)\((.*)\)$/));
+
+  const counts = new Map<string, number>();
+  for (const h of heads) if (h) counts.set(h[1], (counts.get(h[1]) ?? 0) + 1);
+  let dominant: string | undefined;
+  for (const [name, count] of counts) {
+    if (dominant === undefined || count > (counts.get(dominant) ?? 0)) dominant = name;
+  }
+  const share = dominant === undefined ? 0 : (counts.get(dominant) ?? 0);
+
+  if (dominant === undefined || nodes.length <= COMPACT_FROM || share < nodes.length * 0.6) {
+    return { items: nodes.map((node, i) => ({ node, label: labels[i] })) };
+  }
+  return {
+    caption: `${dominant}(…)`,
+    items: nodes.map((node, i) => {
+      const h = heads[i];
+      return { node, label: h && h[1] === dominant ? `(${h[2]})` : labels[i] };
+    }),
+  };
+}
+
+/**
+ * Size the nodes from what they have to say. A value tree — a backtracking
+ * candidate, a list node — reads best as circles; a call tree's labels
+ * (`backtrack(1, [2, 2], 4)`) need a pill wide enough to hold them.
+ */
+function nodeMetrics(items: Labelled[]): Metrics {
+  const longest = items.reduce((m, { label }) => Math.max(m, label.length), 0);
+  const pill = longest > 4;
+  const width = pill ? Math.min(MAX_PILL_W, Math.max(64, Math.ceil(longest * 7.2) + 22)) : CIRCLE_R * 2;
+  const height = pill ? PILL_H : CIRCLE_R * 2;
+  return {
+    pill,
+    width,
+    height,
+    siblingGap: width + 16,
+    // Room under a pill for the "→ value" note before the edge sets off.
+    levelHeight: pill ? 84 : 90,
+    maxChars: pill ? Math.floor((width - 22) / 7.2) : Number.POSITIVE_INFINITY,
+  };
+}
 
 export function TreeMode({ frame }: TreeModeProps) {
-  const { activePointers, highlightedElements, statusType, structures } = frame;
+  const { activePointers, highlightedElements, structures } = frame;
   const { treeData } = structures;
-  const colors = statusColors(statusType);
   const currentId = activePointers.current as string | null | undefined;
+  const scroller = useRef<HTMLDivElement>(null);
 
+  const { items, caption } = useMemo(() => labelNodes(treeData), [treeData]);
+  const metrics = useMemo(() => nodeMetrics(items), [items]);
   const { positioned, edges, width, height } = useMemo(
-    () => layoutTree(treeData),
-    [treeData]
+    () => layoutTree(items, metrics),
+    [items, metrics]
   );
+
+  // A wide tree scrolls rather than shrinking its labels to dust, so keep the
+  // call being made in view as the recursion moves. Horizontally only: pulling
+  // the node into view vertically would drag the whole canvas — and the
+  // narration above it — along.
+  useEffect(() => {
+    const box = scroller.current;
+    if (!box || !currentId) return;
+    const target = positioned.find((p) => p.node.id === currentId);
+    if (!target || box.scrollWidth <= box.clientWidth) return;
+    box.scrollTo({ left: Math.max(0, target.x - box.clientWidth / 2), behavior: "smooth" });
+  }, [currentId, positioned]);
 
   if (!treeData.length) {
     return (
@@ -33,109 +115,159 @@ export function TreeMode({ frame }: TreeModeProps) {
   }
 
   return (
-    <div className="w-full overflow-x-auto py-4">
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        className="mx-auto min-w-[400px]"
-        style={{ maxWidth: "100%", height: "auto" }}
-      >
-        <AnimatePresence>
-          {edges.map((edge) => {
-            const active =
-              highlightedElements.includes(edge.from) ||
-              highlightedElements.includes(edge.to) ||
-              currentId === edge.from ||
-              currentId === edge.to;
-            return (
-              <motion.line
-                key={`${edge.from}-${edge.to}`}
-                x1={edge.x1}
-                y1={edge.y1}
-                x2={edge.x2}
-                y2={edge.y2}
-                stroke={active ? "var(--mac-accent)" : "var(--mac-separator)"}
-                strokeWidth={active ? 2.5 : 1.5}
-                initial={{ pathLength: 0, opacity: 0 }}
-                animate={{ pathLength: 1, opacity: 1 }}
-                transition={{ duration: 0.4 }}
-              />
-            );
-          })}
-        </AnimatePresence>
+    <div className="w-full">
+      {caption && (
+        <div className="text-[11px] font-code text-[var(--mac-text-2)] mb-1 text-center">
+          each node is a call to <span className="text-[var(--mac-accent)]">{caption}</span>
+        </div>
+      )}
+      <div ref={scroller} className="w-full overflow-x-auto py-3">
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          className={metrics.pill ? "block mx-auto" : "mx-auto min-w-[400px]"}
+          style={
+            metrics.pill
+              ? { width, minWidth: width, height }
+              : { maxWidth: "100%", height: "auto" }
+          }
+        >
+          <AnimatePresence>
+            {edges.map((edge) => {
+              const active =
+                highlightedElements.includes(edge.from) ||
+                highlightedElements.includes(edge.to) ||
+                currentId === edge.from ||
+                currentId === edge.to;
+              return (
+                <motion.line
+                  key={`${edge.from}-${edge.to}`}
+                  x1={edge.x1}
+                  y1={edge.y1}
+                  x2={edge.x2}
+                  y2={edge.y2}
+                  stroke={active ? "var(--mac-accent)" : "var(--mac-separator)"}
+                  strokeWidth={active ? 2.5 : 1.5}
+                  initial={{ pathLength: 0, opacity: 0 }}
+                  animate={{ pathLength: 1, opacity: 1 }}
+                  transition={{ duration: 0.4 }}
+                />
+              );
+            })}
+          </AnimatePresence>
 
-        <AnimatePresence mode="popLayout">
-          {positioned.map((node) => {
-            const isHighlighted = highlightedElements.includes(node.id);
-            const isCurrent = currentId === node.id;
-            const isSuccess = String(node.value).startsWith("✓");
-            const isFail = String(node.value).startsWith("✗");
+          <AnimatePresence mode="popLayout">
+            {positioned.map(({ node, label, x, y }) => {
+              const isHighlighted = highlightedElements.includes(node.id);
+              const isCurrent = currentId === node.id;
+              const isSuccess = label.startsWith("✓");
+              const isFail = label.startsWith("✗");
+              // A finished call steps back so the live path stands out; the
+              // one being returned from is still the current node.
+              const done = Boolean(node.done) && !isCurrent;
 
-            const fill = isSuccess
-              ? "rgba(78,201,176,0.2)"
-              : isFail
-                ? "rgba(244,135,113,0.2)"
-                : isHighlighted
-                  ? "rgba(55,148,255,0.15)"
-                  : "var(--mac-inset)";
+              const fill = isSuccess
+                ? "rgba(78,201,176,0.2)"
+                : isFail
+                  ? "rgba(244,135,113,0.2)"
+                  : isCurrent
+                    ? "var(--mac-accent)"
+                    : isHighlighted
+                      ? "rgba(55,148,255,0.15)"
+                      : "var(--mac-inset)";
 
-            const stroke = isSuccess
-              ? "var(--mac-good)"
-              : isFail
-                ? "var(--mac-bad)"
-                : isCurrent
-                  ? "var(--mac-accent)"
-                  : isHighlighted
+              const stroke = isSuccess
+                ? "var(--mac-good)"
+                : isFail
+                  ? "var(--mac-bad)"
+                  : isCurrent || isHighlighted
                     ? "var(--mac-accent)"
                     : "var(--mac-separator)";
 
-            return (
-              <motion.g
-                key={node.id}
-                layout
-                initial={{ opacity: 0, scale: 0 }}
-                animate={{ opacity: 1, scale: isCurrent ? 1.12 : isHighlighted ? 1.06 : 1 }}
-                exit={{ opacity: 0, scale: 0 }}
-                transition={{ type: "spring", stiffness: 280, damping: 22 }}
-              >
-                <motion.circle
-                  cx={node.x}
-                  cy={node.y}
-                  r={NODE_R}
-                  fill={fill}
-                  stroke={stroke}
-                  strokeWidth={isCurrent ? 3 : 2}
-                  filter={isHighlighted ? "url(#glow)" : undefined}
-                  animate={isCurrent ? { r: [NODE_R, NODE_R + 3, NODE_R] } : {}}
-                  transition={{ repeat: Infinity, duration: 1.5 }}
-                />
-                <text
-                  x={node.x}
-                  y={node.y}
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  className="fill-[var(--mac-text)] font-code font-bold"
-                  fontSize={String(node.value).length > 3 ? 11 : 14}
-                >
-                  {node.value}
-                </text>
-              </motion.g>
-            );
-          })}
-        </AnimatePresence>
+              const ink = isCurrent ? "var(--mac-accent-ink)" : "var(--mac-text)";
+              const shown =
+                label.length > metrics.maxChars
+                  ? `${label.slice(0, Math.max(1, metrics.maxChars - 1))}…`
+                  : label;
 
-        <defs>
-          <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="3" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
-      </svg>
+              return (
+                <motion.g
+                  key={node.id}
+                  data-node={node.id}
+                  layout
+                  initial={{ opacity: 0, scale: 0 }}
+                  animate={{
+                    opacity: done ? 0.55 : 1,
+                    scale: isCurrent ? 1.1 : isHighlighted ? 1.05 : 1,
+                  }}
+                  exit={{ opacity: 0, scale: 0 }}
+                  transition={{ type: "spring", stiffness: 280, damping: 22 }}
+                >
+                  {metrics.pill ? (
+                    <rect
+                      x={x - metrics.width / 2}
+                      y={y - metrics.height / 2}
+                      width={metrics.width}
+                      height={metrics.height}
+                      rx={metrics.height / 2}
+                      fill={fill}
+                      stroke={stroke}
+                      strokeWidth={isCurrent ? 2.5 : 1.5}
+                    />
+                  ) : (
+                    <motion.circle
+                      cx={x}
+                      cy={y}
+                      r={CIRCLE_R}
+                      fill={fill}
+                      stroke={stroke}
+                      strokeWidth={isCurrent ? 3 : 2}
+                      filter={isHighlighted ? "url(#glow)" : undefined}
+                      animate={isCurrent ? { r: [CIRCLE_R, CIRCLE_R + 3, CIRCLE_R] } : {}}
+                      transition={{ repeat: Infinity, duration: 1.5 }}
+                    />
+                  )}
+                  <text
+                    x={x}
+                    y={y}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fill={ink}
+                    className="font-code font-bold"
+                    fontSize={metrics.pill ? 11 : label.length > 3 ? 11 : 14}
+                  >
+                    {shown}
+                  </text>
+                  {node.note && (
+                    <text
+                      x={x}
+                      y={y + metrics.height / 2 + 13}
+                      textAnchor="middle"
+                      fontSize={10}
+                      fill={isCurrent ? "var(--mac-accent)" : "var(--mac-text-2)"}
+                      className="font-code"
+                    >
+                      {node.note}
+                    </text>
+                  )}
+                </motion.g>
+              );
+            })}
+          </AnimatePresence>
+
+          <defs>
+            <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+        </svg>
+      </div>
 
       {activePointers.depth !== undefined && (
-        <p className="text-center text-xs font-code text-[var(--mac-text-2)] mt-2">
+        <p className="text-center text-xs font-code text-[var(--mac-text-2)] mt-1">
           recursion depth: <span className="text-[var(--mac-accent)]">{activePointers.depth}</span>
         </p>
       )}
@@ -143,7 +275,7 @@ export function TreeMode({ frame }: TreeModeProps) {
   );
 }
 
-interface PositionedNode extends TreeNode {
+interface PositionedNode extends Labelled {
   x: number;
   y: number;
 }
@@ -157,60 +289,68 @@ interface Edge {
   y2: number;
 }
 
-function layoutTree(nodes: TreeNode[]) {
-  if (!nodes.length) return { positioned: [], edges: [], width: 400, height: 200 };
+function layoutTree(items: Labelled[], metrics: Metrics) {
+  if (!items.length) return { positioned: [], edges: [], width: 400, height: 200 };
 
-  const map = Object.fromEntries(nodes.map((n) => [n.id, { ...n }]));
-  const roots = nodes.filter((n) => !n.parent || !map[n.parent]);
+  const { siblingGap, levelHeight, width: nodeW, height: nodeH, pill } = metrics;
+  const byId = new Map(items.map((it) => [it.node.id, it]));
+  const roots = items.filter(({ node }) => !node.parent || !byId.has(node.parent));
 
   const positioned: PositionedNode[] = [];
+  const placedById = new Map<string, PositionedNode>();
   const edges: Edge[] = [];
   let leafIndex = 0;
-  const root = roots[0] ?? nodes[0];
+  const root = roots[0] ?? items[0];
+  // Leave room under a pill for its note before the edge sets off.
+  const edgeGap = pill ? 16 : 0;
 
   if (root) {
     const xMap: Record<string, number> = {};
 
     function calcX(id: string): number {
-      const n = map[id];
-      if (!n.children.length) {
-        const x = (leafIndex + 1) * SIBLING_GAP;
+      const n = byId.get(id)!.node;
+      const kids = n.children.filter((cid) => byId.has(cid));
+      if (!kids.length) {
+        const x = leafIndex * siblingGap + nodeW / 2 + 12;
         leafIndex++;
         xMap[id] = x;
         return x;
       }
-      const xs = n.children.map(calcX);
+      const xs = kids.map(calcX);
       const x = (Math.min(...xs) + Math.max(...xs)) / 2;
       xMap[id] = x;
       return x;
     }
 
-    calcX(root.id);
+    calcX(root.node.id);
 
     function place(id: string, depth: number) {
-      const n = map[id];
+      const item = byId.get(id)!;
       const x = xMap[id];
-      const y = depth * LEVEL_H + 50;
-      positioned.push({ ...n, x, y });
-      n.children.forEach((cid) => {
+      const y = depth * levelHeight + nodeH / 2 + 12;
+      const placed: PositionedNode = { ...item, x, y };
+      positioned.push(placed);
+      placedById.set(id, placed);
+      for (const cid of item.node.children) {
+        if (!byId.has(cid)) continue;
         place(cid, depth + 1);
-        const child = positioned.find((p) => p.id === cid)!;
+        const child = placedById.get(cid)!;
         edges.push({
           from: id,
           to: cid,
           x1: x,
-          y1: y + NODE_R,
+          y1: y + nodeH / 2 + edgeGap,
           x2: child.x,
-          y2: child.y - NODE_R,
+          y2: child.y - nodeH / 2,
         });
-      });
+      }
     }
 
-    place(root.id, 0);
+    place(root.node.id, 0);
   }
 
-  const maxX = Math.max(...positioned.map((n) => n.x), 200) + SIBLING_GAP;
-  const maxY = Math.max(...positioned.map((n) => n.y), 100) + LEVEL_H;
+  const maxX = Math.max(...positioned.map((n) => n.x), 200) + nodeW / 2 + 12;
+  const maxY = Math.max(...positioned.map((n) => n.y), 100) + nodeH / 2 + 28;
 
   return { positioned, edges, width: maxX, height: maxY };
 }

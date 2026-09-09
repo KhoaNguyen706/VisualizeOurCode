@@ -160,3 +160,18 @@ describe("pythonStepsToTraceHistory", () => {
     expect(step.returnValue).toBeUndefined();
   });
 });
+
+describe("pythonStepsToTraceHistory call tree fields", () => {
+  it("carries the call, its parent, name, arguments and depth through", () => {
+    const steps = pythonStepsToTraceHistory(
+      [
+        { line: 2, frame: 1, parent: null, fn: "fib", args: { n: 2 }, depth: 1, vars: { n: 2 } },
+        { line: 2, frame: 2, parent: 1, fn: "fib", args: { n: 1 }, depth: 2, vars: { n: 1 } },
+      ],
+      "def fib(n):\n    return n if n < 2 else fib(n - 1) + fib(n - 2)"
+    );
+    expect(steps[0]).toMatchObject({ callId: 1, fnName: "fib", args: { n: 2 }, depth: 1 });
+    expect(steps[0].parentCallId).toBeUndefined();
+    expect(steps[1]).toMatchObject({ callId: 2, parentCallId: 1, args: { n: 1 }, depth: 2 });
+  });
+});

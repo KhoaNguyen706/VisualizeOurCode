@@ -119,6 +119,14 @@ export interface PythonStep {
   vars: Record<string, unknown>;
   /** Identifies the call this line belongs to; steps pair only within one. */
   frame?: number;
+  /** The call that made this one, or null for the entry call. */
+  parent?: number | null;
+  /** The function the line ran in. */
+  fn?: string;
+  /** The arguments the call was entered with, by parameter name. */
+  args?: Record<string, unknown>;
+  /** Nesting depth of the call; the entry call is 1. */
+  depth?: number;
   /** Present only on the frame's `return` event. */
   returnValue?: unknown;
 }
@@ -194,6 +202,13 @@ export function pythonStepsToTraceHistory(
       vars: sameCall ? follower.vars : s.vars,
       kind: "mutation",
     };
+    if (s.frame !== undefined) {
+      step.callId = s.frame;
+      if (s.parent !== undefined && s.parent !== null) step.parentCallId = s.parent;
+      if (s.fn) step.fnName = s.fn;
+      if (s.args) step.args = s.args;
+      if (s.depth !== undefined) step.depth = s.depth;
+    }
 
     if (/^return\b/.test(src)) {
       step.kind = "return";

@@ -32,6 +32,7 @@ function visibleSignature(f: TimelineFrame): string {
     s.gridData ?? null,
     s.mapData,
     s.listData.map((n) => [n.id, n.value, n.next]),
+    s.treeData.map((n) => [n.id, n.note ?? null, n.done ?? false]),
     s.resultData ?? null,
     s.containerData ?? null,
     f.highlightedElements,

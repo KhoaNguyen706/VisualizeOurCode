@@ -4,6 +4,7 @@ import type {
   ListNode,
   NamedMap,
   TimelineFrame,
+  TreeNode,
   VariableValue,
   VisualizationMode,
   VisualizationStructures,
@@ -507,15 +508,29 @@ function inferStructures(
     }
   }
 
-  const grid = Object.values(vars).find(
-    (v) =>
-      Array.isArray(v) &&
-      v.length > 0 &&
-      v.every((row) => Array.isArray(row) && row.every((c) => typeof c === "number" || typeof c === "string"))
-  );
-  if (grid) structures.gridData = grid as (number | string)[][];
+  // A table has several rows of one length. A ragged list of lists — or a
+  // single collected result — is the combinations a backtracker gathered, and
+  // drawing that as a matrix with a magnitude ramp misreads it. A name that
+  // says "table" is trusted even at one row.
+  const gridEntry = Object.entries(vars).find(([name, v]) => isTable(name, v));
+  if (gridEntry) structures.gridData = gridEntry[1] as (number | string)[][];
 
   return structures;
+}
+
+const TABLE_NAME_RE = /grid|dp|matrix|board|table|memo|cache|mat/i;
+
+function isTable(name: string, v: unknown): boolean {
+  if (!Array.isArray(v) || v.length === 0) return false;
+  const width = Array.isArray(v[0]) ? (v[0] as unknown[]).length : -1;
+  if (width < 0) return false;
+  const rectangular = v.every(
+    (row) =>
+      Array.isArray(row) &&
+      row.length === width &&
+      row.every((c) => typeof c === "number" || typeof c === "string")
+  );
+  return rectangular && (v.length >= 2 || TABLE_NAME_RE.test(name));
 }
 
 function inferPointers(vars: Record<string, unknown>): ActivePointers {
@@ -596,6 +611,144 @@ function diffArray(
   return out;
 }
 
+/** One call in the tree the trace revealed. */
+interface CallRecord {
+  id: number;
+  parent?: number;
+  fn: string;
+  args: Record<string, unknown>;
+  children: number[];
+  returned?: string;
+  done: boolean;
+}
+
+/**
+ * Whether some call has an ancestor by the same name — the shape a call tree
+ * explains better than a list of steps. A helper called from a loop is not
+ * that, and fifty leaf nodes under one root would add noise, not insight.
+ */
+export function hasRecursion(steps: TraceStep[]): boolean {
+  const calls = new Map<number, { fn?: string; parent?: number }>();
+  for (const s of steps) {
+    if (s.callId !== undefined && !calls.has(s.callId)) {
+      calls.set(s.callId, { fn: s.fnName, parent: s.parentCallId });
+    }
+  }
+  for (const call of calls.values()) {
+    let up = call.parent;
+    while (up !== undefined) {
+      const ancestor = calls.get(up);
+      if (!ancestor) break;
+      if (ancestor.fn === call.fn) return true;
+      up = ancestor.parent;
+    }
+  }
+  return false;
+}
+
+/** `fn(args)`, each argument kept to a few characters so the node stays a node. */
+function callLabel(fn: string, args: Record<string, unknown>): string {
+  const parts = Object.values(args).map((v) => {
+    const text = formatValue(v);
+    if (text.length <= 14) return text;
+    return Array.isArray(v) ? `[…${v.length}]` : `${text.slice(0, 12)}…`;
+  });
+  return `${fn}(${parts.join(", ")})`;
+}
+
+/**
+ * The tree of calls, grown one step at a time. A frame's tree is the tree as
+ * it stood after that step, with the running call marked — so the descent and
+ * the unwinding are both there to watch, and a call that never returns (the
+ * budget cut it, it threw) simply stays open.
+ */
+class CallTree {
+  private calls = new Map<number, CallRecord>();
+  private order: number[] = [];
+  private active: number | undefined;
+
+  /** Register the step's call — a new id becomes a node — and note returns. */
+  observe(step: TraceStep): void {
+    if (step.callId === undefined) return;
+
+    // Control came back up: every call between the last active one and this
+    // one has finished, whether it returned, fell off the end or threw.
+    if (this.active !== undefined && this.active !== step.callId) {
+      const left: number[] = [];
+      let up: number | undefined = this.active;
+      while (up !== undefined && up !== step.callId) {
+        left.push(up);
+        up = this.calls.get(up)?.parent;
+      }
+      if (up === step.callId) {
+        for (const id of left) {
+          const call = this.calls.get(id);
+          if (call) call.done = true;
+        }
+      }
+    }
+
+    let call = this.calls.get(step.callId);
+    if (!call) {
+      call = {
+        id: step.callId,
+        parent: step.parentCallId,
+        fn: step.fnName ?? "call",
+        args: step.args ?? {},
+        children: [],
+        done: false,
+      };
+      this.calls.set(call.id, call);
+      this.order.push(call.id);
+      if (call.parent !== undefined) this.calls.get(call.parent)?.children.push(call.id);
+    }
+    if ("returnValue" in step) {
+      call.returned = formatValue(step.returnValue);
+      if (step.kind === "return") call.done = true;
+    }
+    this.active = step.callId;
+  }
+
+  /** The tree as it stands now, oldest call first. */
+  snapshot(): TreeNode[] {
+    return this.order.map((id) => {
+      const c = this.calls.get(id)!;
+      return {
+        id: `call-${c.id}`,
+        value: callLabel(c.fn, c.args),
+        children: c.children.map((ch) => `call-${ch}`),
+        parent: c.parent !== undefined ? `call-${c.parent}` : null,
+        note: c.returned !== undefined ? `→ ${c.returned}` : undefined,
+        done: c.done,
+      };
+    });
+  }
+
+  /** Node ids from the root down to `callId` — the live recursion path. */
+  pathTo(callId: number | undefined): string[] {
+    const out: string[] = [];
+    let up = callId;
+    while (up !== undefined) {
+      out.push(`call-${up}`);
+      up = this.calls.get(up)?.parent;
+    }
+    return out.reverse();
+  }
+}
+
+/** Point at the running call; the author's own `depth` variable, if any, wins. */
+function withCallPointers(
+  pointers: ActivePointers,
+  step: TraceStep,
+  tree: CallTree | null
+): ActivePointers {
+  if (!tree || step.callId === undefined) return pointers;
+  const out = { ...pointers };
+  if (out.current === undefined) out.current = `call-${step.callId}`;
+  if (out.depth === undefined && step.depth !== undefined) out.depth = step.depth;
+  return out;
+}
+
 export interface NarrateOptions {
   /** Appended as a final frame when the run was cut short by a budget. */
   haltedNote?: string;
@@ -613,6 +766,7 @@ export function narrateTrace(
 ): TimelineFrame[] {
   const sourceLines = sourceCode.split("\n");
   const containers = detectContainers(sourceCode);
+  const tree = hasRecursion(traceHistory) ? new CallTree() : null;
 
   let prevStructures: VisualizationStructures | null = null;
 
@@ -620,6 +774,10 @@ export function narrateTrace(
     const sourceLine = sourceLines[step.line - 1] ?? "";
     const changed = changedNames(step.vars, traceHistory[index - 1]?.vars);
     const structures = inferStructures(step.vars, containers);
+    if (tree) {
+      tree.observe(step);
+      structures.treeData = tree.snapshot();
+    }
     const isCondition = step.kind === "condition" || step.kind === "loop";
 
     // Diff the rendered structures, not just the variables: a write through a
@@ -636,8 +794,11 @@ export function narrateTrace(
       step: index,
       mode: pickMode(structures),
       structures,
-      activePointers: inferPointers(step.vars),
-      highlightedElements: inferHighlights(step.vars, structures.arrayData.length),
+      activePointers: withCallPointers(inferPointers(step.vars), step, tree),
+      highlightedElements: [
+        ...inferHighlights(step.vars, structures.arrayData.length),
+        ...(tree?.pathTo(step.callId) ?? []),
+      ],
       statusType: step.kind === "return" ? "SUCCESS" : "EXPLORE",
       message: buildMessage(step, sourceLine, changed),
       variables: toVariables(step.vars),

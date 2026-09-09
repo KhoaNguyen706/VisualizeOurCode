@@ -12,6 +12,16 @@ export interface TraceStep {
   condLabel?: string;
   /** For `return` steps: the value the expression actually evaluated to. */
   returnValue?: unknown;
+  /** The call this step ran in; steps sharing an id share one frame. */
+  callId?: number;
+  /** The call that made this one — its parent in the call tree. */
+  parentCallId?: number;
+  /** The function the step ran in. */
+  fnName?: string;
+  /** The arguments the call was entered with, by parameter name. */
+  args?: Record<string, unknown>;
+  /** Nesting depth of the call; the entry call is 1. */
+  depth?: number;
 }
 
 export interface SandboxResult {
@@ -231,8 +241,45 @@ export function runSandbox(
     traceHistory.push(step);
   };
 
+  /**
+   * The calls currently open, innermost last. `instrumentCode` wraps every
+   * named function body in `__enter__` / `__exit__`, so each recorded step
+   * can say which call it ran in — which is what lets a recursion be drawn as
+   * the tree of calls it actually made.
+   */
+  interface ActiveCall {
+    id: number;
+    parent?: number;
+    fn: string;
+    args: Record<string, unknown>;
+    depth: number;
+  }
+  const callStack: ActiveCall[] = [];
+  let callSeq = 0;
+
+  const callFields = (): Pick<TraceStep, "callId" | "parentCallId" | "fnName" | "args" | "depth"> => {
+    const top = callStack[callStack.length - 1];
+    if (!top) return {};
+    return { callId: top.id, parentCallId: top.parent, fnName: top.fn, args: top.args, depth: top.depth };
+  };
+
+  const enterFn = (name: string, args: Record<string, unknown>) => {
+    const parent = callStack[callStack.length - 1];
+    callStack.push({
+      id: ++callSeq,
+      parent: parent?.id,
+      fn: name,
+      args: cloneSnapshot(args),
+      depth: callStack.length + 1,
+    });
+  };
+
+  const exitFn = () => {
+    callStack.pop();
+  };
+
   const traceFn = (line: number, vars: Record<string, unknown>, kind?: TraceKind) => {
-    record({ line, vars: cloneSnapshot(vars), ts: Date.now(), kind });
+    record({ line, vars: cloneSnapshot(vars), ts: Date.now(), kind, ...callFields() });
   };
 
   /**
@@ -253,6 +300,7 @@ export function runSandbox(
       kind,
       condResult: Boolean(value),
       condLabel: label,
+      ...callFields(),
     });
     return value;
   };
@@ -263,13 +311,21 @@ export function runSandbox(
    * rather than adding one.
    */
   const retFn = <T>(value: T): T => {
-    const last = traceHistory[traceHistory.length - 1];
-    if (last && last.kind === "return") {
+    // The value belongs on this call's own return step. The most recent step
+    // overall may be a callee's — `return fib(n - 1) + fib(n - 2)` records
+    // the parent's return line, then every child step, then reaches here —
+    // and stamping it there credited the child with its parent's result.
+    const top = callStack[callStack.length - 1];
+    for (let i = traceHistory.length - 1; i >= 0; i -= 1) {
+      const step = traceHistory[i];
+      if (step.kind !== "return") continue;
+      if (top && step.callId !== top.id) continue;
       try {
-        last.returnValue = snapshotValue(value, new Set(), 0);
+        step.returnValue = snapshotValue(value, new Set(), 0);
       } catch {
         /* leave the step unannotated rather than failing the run */
       }
+      break;
     }
     return value;
   };
@@ -291,6 +347,8 @@ export function runSandbox(
       return __sandboxCond__(line, vars, value, label, kind);
     }
     function __ret__(value) { return __sandboxRet__(value); }
+    function __enter__(name, args) { return __sandboxEnter__(name, args); }
+    function __exit__() { return __sandboxExit__(); }
   `;
 
   try {
@@ -299,15 +357,19 @@ export function runSandbox(
       "__sandboxGuard__",
       "__sandboxCond__",
       "__sandboxRet__",
+      "__sandboxEnter__",
+      "__sandboxExit__",
       `"use strict";\n${preamble}\n${instrumentedCode}\nreturn ${entryCall};`
     ) as (
       trace: typeof traceFn,
       guard: typeof guardFn,
       cond: typeof condFn,
-      ret: typeof retFn
+      ret: typeof retFn,
+      enter: typeof enterFn,
+      exit: typeof exitFn
     ) => unknown;
 
-    const returnValue = fn(traceFn, guardFn, condFn, retFn);
+    const returnValue = fn(traceFn, guardFn, condFn, retFn, enterFn, exitFn);
 
     return { traceHistory, returnValue };
   } catch (err) {

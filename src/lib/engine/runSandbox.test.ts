@@ -162,3 +162,29 @@ describe("entry point detection", () => {
     );
   });
 });
+
+describe("call tracking", () => {
+  const FIB = "function fib(n) {\n  if (n < 2) {\n    return n;\n  }\n  return fib(n - 1) + fib(n - 2);\n}";
+
+  it("tags every step with the call it ran in and its depth", () => {
+    const result = trace(FIB, "fib(3)");
+    expect(result.error).toBeUndefined();
+    const deepest = Math.max(...result.traceHistory.map((s) => s.depth ?? 0));
+    expect(deepest).toBe(3);
+    const entry = result.traceHistory.find((s) => s.callId === 1);
+    expect(entry?.fnName).toBe("fib");
+    expect(entry?.args).toEqual({ n: 3 });
+    expect(entry?.parentCallId).toBeUndefined();
+    const child = result.traceHistory.find((s) => s.parentCallId === 1);
+    expect(child?.args).toEqual({ n: 2 });
+  });
+
+  it("credits each return value to its own call, not the last callee", () => {
+    const result = trace(FIB, "fib(3)");
+    const returns = result.traceHistory.filter((s) => s.kind === "return");
+    const byArg = (n: number) => returns.find((s) => s.args?.n === n && s.returnValue !== undefined);
+    expect(byArg(3)?.returnValue).toBe(2);
+    expect(byArg(2)?.returnValue).toBe(1);
+    expect(byArg(1)?.returnValue).toBe(1);
+  });
+});

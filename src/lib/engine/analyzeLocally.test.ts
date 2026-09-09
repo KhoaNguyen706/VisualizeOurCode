@@ -267,3 +267,22 @@ describe("analyzeLocally names the approaches it recognises", () => {
     expect(drawn?.structures.arrayData).toEqual([..."racecar"]);
   });
 });
+
+describe("analyzeLocally draws a recursion as its call tree", () => {
+  it("leads with the tree of calls for a self-calling function", async () => {
+    const code = `function fib(n) {
+  if (n < 2) {
+    return n;
+  }
+  return fib(n - 1) + fib(n - 2);
+}
+// Example: fib(4)`;
+    const result = expectSuccess(await analyzeLocally(code, "javascript"));
+    expect(result.techniques?.[0]).toBe("recursion");
+    const last = result.scenario.timeline[result.scenario.timeline.length - 1];
+    expect(last.mode).toBe("TREE");
+    expect(last.structures.treeData.length).toBeGreaterThan(5);
+    expect(last.structures.treeData[0].value).toBe("fib(4)");
+    expect(last.structures.treeData[0].note).toBe("→ 3");
+  });
+});
