@@ -466,6 +466,40 @@ export function detectContainers(sourceCode: string): Map<string, ContainerView[
   return out;
 }
 
+/**
+ * The author's sets, by name. A Python set arrives in the snapshot as a plain
+ * list — JSON has no set — so the only way to know `dup` is a set and not a
+ * list is to read how the author declared and used it: `dup = set()`,
+ * `new Set()`, or `.add(` with nothing ever popped. Without this a
+ * `hasDuplicate` drew its set empty while the panel showed three values in it.
+ */
+export function detectSets(sourceCode: string): Set<string> {
+  const out = new Set<string>();
+  for (const m of sourceCode.matchAll(/\b([A-Za-z_$][\w$]*)\s*(?::\s*[Ss]et\b[^=]*)?=\s*(?:new\s+Set\s*\(|set\s*\()/g)) {
+    out.add(m[1]);
+  }
+  const verbs = new Map<string, Set<string>>();
+  for (const m of sourceCode.matchAll(CONTAINER_USE_RE)) {
+    if (!verbs.has(m[1])) verbs.set(m[1], new Set());
+    verbs.get(m[1])!.add(m[2]);
+  }
+  for (const [name, used] of verbs) {
+    if (used.has("add") && ![...used].some((v) => TAKE_VERBS.has(v))) out.add(name);
+  }
+  return out;
+}
+
+/** A set drawn as membership rows under the author's own name. */
+function setsAsMaps(vars: Record<string, unknown>, sets: Set<string>): NamedMap[] {
+  const out: NamedMap[] = [];
+  for (const name of sets) {
+    const v = vars[name];
+    if (!Array.isArray(v) || !v.every(isScalar)) continue;
+    out.push({ name, data: Object.fromEntries(v.map((x) => [String(x), "in set"])) });
+  }
+  return out;
+}
+
 function inferContainer(
   vars: Record<string, unknown>,
   containers: Map<string, ContainerView["kind"]>
@@ -480,19 +514,23 @@ function inferContainer(
 
 function inferStructures(
   vars: Record<string, unknown>,
-  containers: Map<string, ContainerView["kind"]> = new Map()
+  containers: Map<string, ContainerView["kind"]> = new Map(),
+  sets: Set<string> = new Set()
 ): VisualizationStructures {
   const structures: VisualizationStructures = { ...EMPTY_STRUCTURES };
 
   const container = inferContainer(vars, containers);
   if (container) structures.containerData = container;
 
-  // The frontier is drawn as its own row; letting it also win `pickArray` would
-  // put the same values on screen twice, in two different shapes.
-  const arr = pickArray(vars, container ? new Set([container.name]) : undefined);
+  // The frontier is drawn as its own row, and a set as membership rows;
+  // letting either also win `pickArray` would put the same values on screen
+  // twice, in two different shapes.
+  const exclude = new Set<string>(sets);
+  if (container) exclude.add(container.name);
+  const arr = pickArray(vars, exclude);
   if (arr) structures.arrayData = arr;
 
-  const maps = pickMaps(vars, container ? new Set([container.name]) : undefined);
+  const maps = [...setsAsMaps(vars, sets), ...pickMaps(vars, exclude)].slice(0, 3);
   if (maps.length > 0) {
     structures.mapsData = maps;
     // Prefer one with contents: a dict declared before the loop that fills it
@@ -768,6 +806,7 @@ export function narrateTrace(
 ): TimelineFrame[] {
   const sourceLines = sourceCode.split("\n");
   const containers = detectContainers(sourceCode);
+  const sets = detectSets(sourceCode);
   const tree = hasRecursion(traceHistory) ? new CallTree() : null;
 
   let prevStructures: VisualizationStructures | null = null;
@@ -775,7 +814,7 @@ export function narrateTrace(
   const frames: TimelineFrame[] = traceHistory.map((step, index) => {
     const sourceLine = sourceLines[step.line - 1] ?? "";
     const changed = changedNames(step.vars, traceHistory[index - 1]?.vars);
-    const structures = inferStructures(step.vars, containers);
+    const structures = inferStructures(step.vars, containers, sets);
     if (tree) {
       tree.observe(step);
       structures.treeData = tree.snapshot();

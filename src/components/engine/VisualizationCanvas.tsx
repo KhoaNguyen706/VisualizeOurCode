@@ -56,6 +56,13 @@ const STATUS_WORD: Record<TimelineFrame["statusType"], string> = {
   FAIL: "stopped",
 };
 
+/** A set is drawn as a map whose every value is the membership marker. */
+function isSetMap(m: { data: Record<string, number | string> } | undefined): boolean {
+  if (!m) return false;
+  const values = Object.values(m.data);
+  return values.length > 0 && values.every((v) => v === "in set" || v === "✓");
+}
+
 function isTechnique(v: unknown): v is VisualizationTechnique {
   return typeof v === "string" && v in TECHNIQUE_LABELS;
 }
@@ -83,7 +90,9 @@ export function VisualizationCanvas({ frame }: VisualizationCanvasProps) {
   if (s.containerData) sections.push("container");
   if (modes.includes("ARRAY") && s.arrayData.length > 0) sections.push("array");
   if (modes.includes("HASH_MAP")) sections.push("maps");
-  if (lead === "hash_set" || (s.resultData?.length ?? 0) > 0) sections.push("result");
+  // A result is drawn only when the code has one — a tracer's output list,
+  // or an author's `result` variable — never conjured because of the technique.
+  if (s.resultData !== undefined) sections.push("result");
   if (modes.includes("LINKED_LIST") && s.listData.length > 0) sections.push("list");
   if (modes.includes("TREE") && s.treeData.length > 0) sections.push("tree");
   if (lead === "dp_grid" || (s.gridData?.length ?? 0) > 0) sections.push("grid");
@@ -100,7 +109,7 @@ export function VisualizationCanvas({ frame }: VisualizationCanvasProps) {
       case "array":
         return "Array";
       case "maps":
-        return lead === "hash_set" ? "Set" : "Hash Map";
+        return isSetMap(maps[0]) ? "Set" : "Hash Map";
       case "result":
         return "Result";
       case "list":
@@ -143,14 +152,14 @@ export function VisualizationCanvas({ frame }: VisualizationCanvasProps) {
                 <h3 className="text-[10px] font-code uppercase tracking-wider text-[var(--mac-accent)] mb-2 text-center">
                   {m.name}
                 </h3>
-                <HashMapMode frame={frame} map={m.data} compact />
+                <HashMapMode frame={frame} map={m.data} name={m.name} compact />
               </div>
             ))}
           </div>
         ) : (
           <>
-            {heading(lead === "hash_set" ? "Set" : maps[0]?.name ?? "Hash Map")}
-            <HashMapMode frame={frame} compact={several} />
+            {heading(maps[0]?.name ?? (isSetMap(maps[0]) ? "Set" : "Hash Map"))}
+            <HashMapMode frame={frame} compact={several} name={maps[0]?.name} />
           </>
         );
       case "result":

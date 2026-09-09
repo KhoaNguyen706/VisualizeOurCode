@@ -129,6 +129,28 @@ function composeModes(
   return out.length > 1 ? out : undefined;
 }
 
+/**
+ * The key a membership check looks up, as the map/set draws it: `x in seen`,
+ * `x not in seen`, `seen.has(x)`, `x in seen.keys()`. Only a scalar `x` is a
+ * key; anything else is not something a row can be.
+ */
+export function membershipProbe(
+  label: string | undefined,
+  variables: TimelineFrame["variables"]
+): string | undefined {
+  if (!label || !variables) return undefined;
+  const m =
+    label.match(/^\s*(?:not\s+)?([A-Za-z_$][\w$]*)\s+(?:not\s+)?in\s+[A-Za-z_$][\w$.]*(?:\(\))?\s*$/) ??
+    label.match(/^\s*!?\s*[A-Za-z_$][\w$.]*\.has\(\s*([A-Za-z_$][\w$]*)\s*\)\s*$/) ??
+    label.match(/^\s*!?\s*\(?\s*([A-Za-z_$][\w$]*)\s+in\s+[A-Za-z_$][\w$]*\s*\)?\s*$/);
+  if (!m) return undefined;
+  const value = variables[m[1]];
+  if (typeof value === "number" || typeof value === "string" || typeof value === "boolean") {
+    return String(value);
+  }
+  return undefined;
+}
+
 function applyTechniqueVisuals(
   frame: TimelineFrame,
   lead: VisualizationTechnique,
@@ -198,8 +220,10 @@ function applyTechniqueVisuals(
       mode = "ARRAY";
       overlayModes = overlayModes ?? ["ARRAY", "HASH_MAP"];
       if (i !== undefined) highlights = [...new Set([...highlights, i])];
+      // The narrator already drew the author's own sets under their names; a
+      // variable literally called `set` is only a fallback when it found none.
       const setVar = frame.variables?.set;
-      if (Array.isArray(setVar)) {
+      if (Array.isArray(setVar) && (structures.mapsData?.length ?? 0) === 0) {
         structures.mapData = Object.fromEntries(setVar.map((v) => [String(v), "in set"]));
       }
       const resVar = frame.variables?.result;
@@ -225,6 +249,11 @@ function applyTechniqueVisuals(
     default:
       break;
   }
+
+  // `if num in dup` / `seen.has(x)`: the value being looked up lights up in
+  // the set or map it is looked up in, whatever the lead technique.
+  const probed = membershipProbe(frame.conditionLabel, frame.variables);
+  if (probed !== undefined && !highlights.includes(probed)) highlights = [...highlights, probed];
 
   return {
     ...frame,

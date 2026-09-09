@@ -9,9 +9,11 @@ interface HashMapModeProps {
   compact?: boolean;
   /** Render this map instead of the frame's primary one, when several exist. */
   map?: Record<string, number | string>;
+  /** The author's own name for it, shown when this is the only picture. */
+  name?: string;
 }
 
-export function HashMapMode({ frame, compact = false, map }: HashMapModeProps) {
+export function HashMapMode({ frame, compact = false, map, name }: HashMapModeProps) {
   const { highlightedElements, statusType, structures, technique } = frame;
   const colors = statusColors(statusType);
   const entries = Object.entries(map ?? structures.mapData);
@@ -23,7 +25,14 @@ export function HashMapMode({ frame, compact = false, map }: HashMapModeProps) {
     return (
       <div className="w-full max-w-lg mx-auto">
         <div className="text-[10px] font-code uppercase tracking-wider text-[var(--mac-text-2)] mb-3 text-center">
-          Set (seen values)
+          {name ? (
+            <>
+              <span className="text-[var(--mac-accent)] normal-case">{name}</span> · set · {entries.length}{" "}
+              {entries.length === 1 ? "value" : "values"}
+            </>
+          ) : (
+            "Set (seen values)"
+          )}
         </div>
         <div className={`flex flex-wrap gap-2 justify-center ${compact ? "max-h-48 overflow-y-auto" : ""}`}>
           <AnimatePresence mode="popLayout">
