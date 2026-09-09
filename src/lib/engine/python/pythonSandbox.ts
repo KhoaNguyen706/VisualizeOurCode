@@ -83,7 +83,7 @@ async function getPyodide(): Promise<PyodideInterface> {
  *   - hands back a JSON string the JS side parses into a PythonTracePayload.
  */
 const HARNESS = `
-import sys, json
+import sys, json, io
 
 try:
     from collections import deque as _deque
@@ -267,20 +267,40 @@ for _mod, _names in (
         pass
 
 _error = None
+# print() is how most people debug; without this it went to the browser console
+# where nobody looks. Captured for the Output panel, restored no matter what.
+_stdout = io.StringIO()
+_real_stdout = sys.stdout
 try:
     _code = compile(_src, "<user>", "exec")
+    sys.stdout = _stdout
     sys.settrace(_tracer)
     try:
         exec(_code, _globals)
     finally:
         sys.settrace(None)
+        sys.stdout = _real_stdout
 except _Stop:
     pass
 except Exception as e:
     _error = repr(e)
 
-json.dumps({"steps": _steps, "halted": _halted[0], "error": _error})
+json.dumps({"steps": _steps, "halted": _halted[0], "error": _error, "stdout": _stdout.getvalue()[:20000]})
 `;
+
+/**
+ * What the entry call returned: the last `return` recorded in the outermost
+ * call. The harness has no way to hand the value back directly — the entry
+ * expression runs inside `exec` — but it records every return, and the
+ * outermost one is the answer.
+ */
+function entryReturnValue(steps: SandboxResult["traceHistory"]): unknown {
+  for (let i = steps.length - 1; i >= 0; i--) {
+    const s = steps[i];
+    if ("returnValue" in s && (s.depth ?? 1) <= 1) return s.returnValue;
+  }
+  return undefined;
+}
 
 /**
  * Execute Python source and collect a trace of its own execution. Returns the
@@ -308,10 +328,12 @@ export async function runPythonTrace(
     const program = HARNESS.replace(/__STEP_LIMIT__/g, String(STEP_LIMIT));
     const raw = await py.runPythonAsync(program);
     const payload = JSON.parse(String(raw)) as PythonTracePayload;
+    const traceHistory = pythonStepsToTraceHistory(payload.steps, rawCode);
 
     return {
-      traceHistory: pythonStepsToTraceHistory(payload.steps, rawCode),
-      returnValue: undefined,
+      traceHistory,
+      returnValue: entryReturnValue(traceHistory),
+      stdout: payload.stdout || undefined,
       error: payload.error ?? undefined,
       halted: payload.halted || undefined,
     };

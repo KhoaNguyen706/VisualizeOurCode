@@ -239,7 +239,9 @@ function buildMessage(
   }
 
   if (step.kind === "return") {
-    const expr = src.replace(/^return\s*/, "").trim();
+    // The return may share its line with the `if` that guards it, so read the
+    // expression from the keyword onward rather than from the line's start.
+    const expr = (src.match(/\breturn\b\s*([\s\S]*?)\s*;?\s*$/)?.[1] ?? "").trim();
     if (!expr) return "Return";
     // The instrumented `__ret__` captured what the expression evaluated to;
     // fall back to substituting names only when it could not be wrapped.

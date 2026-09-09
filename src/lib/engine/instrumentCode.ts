@@ -26,8 +26,33 @@ const DECL_RE = /^\s*(?:const|let|var)\s+([\w$]+)\s*=(?!=)/;
 /** `x =`, `x +=`, `x **=`, `x ??=` — but never `x ==` / `x ===`. */
 const ASSIGN_RE = /^\s*([\w$]+)\s*(?:\*\*|<<|>>>|>>|[+\-*/%&|^]|\|\||&&|\?\?)?=(?!=)/;
 
-/** `arr[i] = v`, `grid[r][c] += 1` — the *container* is what changed. */
-const INDEX_ASSIGN_RE = /^\s*([\w$]+)\s*\[[^\]]*\](?:\s*\[[^\]]*\])*\s*(?:\*\*|<<|>>>|>>|[+\-*/%&|^])?=(?!=)/;
+/**
+ * `arr[i] = v`, `grid[r][c] += 1`, `seen[nums[i]] = i` — the *container* is
+ * what changed. Matched by hand rather than regex so a nested subscript in the
+ * index (`seen[nums[i]]`, the shape of every hash-map solution) still counts.
+ */
+function matchIndexAssign(trimmed: string): string | null {
+  const head = trimmed.match(/^\s*([\w$]+)\s*\[/);
+  if (!head) return null;
+  let i = head[0].length - 1;
+  // Walk every consecutive `[...]` group, tolerating nesting inside each.
+  while (trimmed[i] === "[") {
+    let depth = 0;
+    let j = i;
+    for (; j < trimmed.length; j += 1) {
+      if (trimmed[j] === "[") depth += 1;
+      else if (trimmed[j] === "]") {
+        depth -= 1;
+        if (depth === 0) break;
+      }
+    }
+    if (depth !== 0) return null;
+    i = j + 1;
+    while (trimmed[i] === " " || trimmed[i] === "\t") i += 1;
+  }
+  const rest = trimmed.slice(i);
+  return /^(?:\*\*|<<|>>>|>>|[+\-*/%&|^])?=(?!=)/.test(rest) ? head[1] : null;
+}
 
 /** `i++`, `--count` */
 const INCDEC_RE = /^\s*(?:\+\+|--)?([\w$]+)(?:\+\+|--)\s*;?\s*$/;
@@ -390,11 +415,31 @@ function shouldSkipLine(trimmed: string): boolean {
 
 /** The variable a line mutates, or null when the line changes no tracked state. */
 function mutatedVariable(trimmed: string): string | null {
-  for (const re of [DECL_RE, INDEX_ASSIGN_RE, INCDEC_RE, METHOD_MUTATE_RE, ASSIGN_RE]) {
+  const indexed = matchIndexAssign(trimmed);
+  if (indexed && isIdentifier(indexed)) return indexed;
+  for (const re of [DECL_RE, INCDEC_RE, METHOD_MUTATE_RE, ASSIGN_RE]) {
     const m = trimmed.match(re);
     if (m?.[1] && isIdentifier(m[1])) return m[1];
   }
   return null;
+}
+
+/**
+ * `if (cond) return expr;` on one line, split at the condition's closing
+ * paren. A first draft is full of these — the early exit is the answer — and
+ * leaving the return untraced meant the run ended without ever saying what it
+ * returned.
+ */
+function splitInlineReturn(line: string): { head: string; expr: string } | null {
+  const ifHead = line.match(IF_HEAD_RE);
+  if (!ifHead) return null;
+  const openIdx = ifHead[0].length - 1;
+  const closeIdx = findMatchingParen(line, openIdx);
+  if (closeIdx === -1) return null;
+  const tail = line.slice(closeIdx + 1);
+  const ret = tail.match(/^\s*return\b\s*(.*?)\s*;?\s*$/);
+  if (!ret || !isBalanced(ret[1])) return null;
+  return { head: line.slice(0, closeIdx + 1), expr: ret[1] };
 }
 
 /** Last preceding line that is neither blank nor a comment. */
@@ -551,6 +596,18 @@ export function instrumentCode(rawCode: string): InstrumentResult {
     const ctx: CondTraceContext = { lineNum, snapshotExpr };
     let line = injectLoopGuards(rawLine, ctx);
     if (line.includes(`__cond__(${lineNum},`)) record(lineNum, "loop");
+
+    // `if (cond) return x;` — the decision and the exit share a line. Trace
+    // both: the condition as itself, then the return inside a block of its own.
+    const inline = splitInlineReturn(line);
+    if (inline) {
+      const head = injectConditionTrace(inline.head, ctx);
+      if (head !== inline.head) record(lineNum, "condition");
+      const ret = inline.expr ? `return __ret__(${inline.expr});` : "return;";
+      output.push(`${head} { ${traceStmt(lineNum, "", "return")} ${ret} }`);
+      record(lineNum, "return");
+      continue;
+    }
 
     const beforeIf = line;
     line = injectConditionTrace(line, ctx);

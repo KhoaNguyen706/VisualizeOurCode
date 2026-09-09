@@ -1,4 +1,5 @@
 import type { TraceStep } from "../runSandbox";
+import { chooseEntry } from "../chooseEntry";
 
 /**
  * Pure helpers for the Python tracing tier — no Pyodide, no browser globals —
@@ -36,6 +37,7 @@ export interface PythonEntryTarget {
  */
 export function detectPythonEntryTarget(code: string): PythonEntryTarget | null {
   let currentClass: { name: string; indent: number } | null = null;
+  const candidates: (PythonEntryTarget & { indent: number })[] = [];
 
   for (const rawLine of code.split("\n")) {
     const line = rawLine.replace(/\t/g, "    ");
@@ -58,12 +60,29 @@ export function detectPythonEntryTarget(code: string): PythonEntryTarget | null 
       if (fnName.startsWith("__")) continue; // __init__ and friends are not entry points
       // Only a bound method needs an instance; a @staticmethod does not.
       const takesSelf = /^self\b/.test(params.trim());
-      return { fnName, className: currentClass && takesSelf ? currentClass.name : null };
+      candidates.push({
+        fnName,
+        className: currentClass && takesSelf ? currentClass.name : null,
+        indent,
+      });
     }
   }
 
-  return null;
+  if (candidates.length === 0) return null;
+
+  // A nested def is a helper of the function it sits in, never the entry.
+  const outermost = Math.min(...candidates.map((c) => c.indent));
+  const topLevel = candidates.filter((c) => c.indent === outermost);
+
+  const pick = chooseEntry(
+    topLevel.map((c) => c.fnName),
+    code,
+    code.match(/#\s*(?:Example|Test|Call):\s*(.+)/i)?.[1]
+  );
+  const chosen = topLevel.find((c) => c.fnName === pick) ?? topLevel[0];
+  return { fnName: chosen.fnName, className: chosen.className };
 }
+
 
 /**
  * True when brackets and quotes close cleanly, so the text can be dropped
@@ -136,6 +155,8 @@ export interface PythonTracePayload {
   steps: PythonStep[];
   halted: boolean;
   error: string | null;
+  /** Everything the code printed while it ran. */
+  stdout?: string;
 }
 
 /**

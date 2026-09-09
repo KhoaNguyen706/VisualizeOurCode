@@ -1,4 +1,5 @@
 import type { TraceKind } from "./instrumentCode";
+import { chooseEntry } from "./chooseEntry";
 
 export interface TraceStep {
   line: number;
@@ -27,6 +28,8 @@ export interface TraceStep {
 export interface SandboxResult {
   traceHistory: TraceStep[];
   returnValue: unknown;
+  /** Everything the code printed, so a debug print is not lost to the console. */
+  stdout?: string;
   error?: string;
   /** True when execution was cut short by the step, loop, or wall-clock budget. */
   halted?: boolean;
@@ -140,16 +143,26 @@ function cloneSnapshot(vars: Record<string, unknown>): Record<string, unknown> {
 
 export function detectFunctionName(code: string): string | null {
   const patterns = [
-    /function\s+(\w+)\s*\(/,
-    /(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?function/,
-    /(?:const|let|var)\s+(\w+)\s*=\s*\(/,
-    /(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>/,
+    /function\s+(\w+)\s*\(/g,
+    /(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?function/g,
+    /(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>/g,
   ];
+  // Every named function, in source order, then the one nothing else calls —
+  // a `dfs` helper written above `numIslands` is not the entry point.
+  const names: string[] = [];
   for (const re of patterns) {
-    const m = code.match(re);
-    if (m?.[1]) return m[1];
+    for (const m of code.matchAll(re)) {
+      if (m[1] && !names.includes(m[1])) names.push(m[1]);
+    }
   }
-  return null;
+  if (names.length === 0) {
+    // Loose last resort: `const f = (` may be a function or a parenthesised
+    // value, so it is only trusted when nothing better was found.
+    const loose = code.match(/(?:const|let|var)\s+(\w+)\s*=\s*\(/);
+    return loose?.[1] ?? null;
+  }
+  const example = code.match(/\/\/\s*(?:Example|Test|Call):\s*(.+)/i)?.[1];
+  return chooseEntry(names, code, example);
 }
 
 export function extractEntryCall(
@@ -351,6 +364,7 @@ export function runSandbox(
     function __exit__() { return __sandboxExit__(); }
   `;
 
+  const printed = captureConsole();
   try {
     const fn = new Function(
       "__sandboxTrace__",
@@ -371,14 +385,52 @@ export function runSandbox(
 
     const returnValue = fn(traceFn, guardFn, condFn, retFn, enterFn, exitFn);
 
-    return { traceHistory, returnValue };
+    return { traceHistory, returnValue, stdout: printed.text() || undefined };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return {
       traceHistory,
       returnValue: undefined,
+      stdout: printed.text() || undefined,
       error: message,
       halted: isHaltSignal(message) || undefined,
     };
+  } finally {
+    printed.restore();
+  }
+}
+
+const MAX_STDOUT_LINES = 200;
+
+/**
+ * Collect `console.log` output while the author's code runs. The code runs on
+ * the page, so its `console` is the page's; swapping the method for the
+ * duration of the call is the only way to see what a debug print said.
+ */
+function captureConsole(): { text: () => string; restore: () => void } {
+  const lines: string[] = [];
+  const original = console.log;
+  console.log = (...args: unknown[]) => {
+    if (lines.length < MAX_STDOUT_LINES) {
+      lines.push(args.map((a) => (typeof a === "string" ? a : safeStringify(a))).join(" "));
+    } else if (lines.length === MAX_STDOUT_LINES) {
+      lines.push("… output truncated");
+    }
+    original.apply(console, args);
+  };
+  return {
+    text: () => lines.join("\n"),
+    restore: () => {
+      console.log = original;
+    },
+  };
+}
+
+function safeStringify(value: unknown): string {
+  try {
+    const text = JSON.stringify(value);
+    return text === undefined ? String(value) : text;
+  } catch {
+    return String(value);
   }
 }

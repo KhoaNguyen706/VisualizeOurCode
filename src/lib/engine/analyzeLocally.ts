@@ -32,6 +32,19 @@ export interface AnalyzeResult {
   patternHint?: PatternHint;
   /** Every technique the code combines, primary first. */
   techniques?: VisualizationTechnique[];
+  /** What the entry call returned, when the code was actually executed. */
+  returnValue?: unknown;
+  /** True when the run produced a return value (which may itself be undefined/None). */
+  hasReturnValue?: boolean;
+  /** Everything the code printed while it ran. */
+  stdout?: string;
+  /** The runtime error the code raised, if it did. */
+  runtimeError?: string;
+  /**
+   * The same run, one frame per recorded line instead of folded into beats —
+   * for the reader who wants the debugger's view of a stretch of the code.
+   */
+  lineTimeline?: Scenario["timeline"];
 }
 
 export interface AnalyzeError {
@@ -73,6 +86,13 @@ function finalizeResult(
 ): AnalyzeResult {
   const techniques = inferTechniquesFromCode(rawCode);
   result.scenario = enrichScenarioTimeline(result.scenario, rawCode, techniques);
+  if (result.lineTimeline) {
+    result.lineTimeline = enrichScenarioTimeline(
+      { ...result.scenario, timeline: result.lineTimeline },
+      rawCode,
+      techniques
+    ).timeline;
+  }
   result.techniques = techniques;
   result.traceSteps = result.scenario.timeline.length;
   result.elapsedMs = Math.round(performance.now() - start);
@@ -162,8 +182,10 @@ function analyzeWithTracing(
   // own wording and structures to decide which of them a viewer would notice.
   const lineFrames = narrateTrace(sandbox.traceHistory, rawCode, { haltedNote });
   const timeline = condenseTrace(lineFrames, sandbox.traceHistory, rawCode);
+  const lineTimeline = condenseTrace(lineFrames, sandbox.traceHistory, rawCode, { everyLine: true });
 
   return {
+    lineTimeline,
     scenario: {
       id: `trace-${Date.now()}`,
       name: `${fnName}()`,
@@ -178,6 +200,10 @@ function analyzeWithTracing(
     warning: sandbox.halted
       ? "Execution stopped at the step budget — showing the trace up to that point."
       : undefined,
+    returnValue: sandbox.returnValue,
+    hasReturnValue: !sandbox.halted && !sandbox.error,
+    stdout: sandbox.stdout,
+    runtimeError: sandbox.halted ? undefined : sandbox.error,
   };
 }
 
@@ -225,8 +251,10 @@ async function analyzeWithPythonTracing(
       : undefined;
   const lineFrames = narrateTrace(sandbox.traceHistory, rawCode, { haltedNote });
   const timeline = condenseTrace(lineFrames, sandbox.traceHistory, rawCode);
+  const lineTimeline = condenseTrace(lineFrames, sandbox.traceHistory, rawCode, { everyLine: true });
 
   return {
+    lineTimeline,
     scenario: {
       id: `pytrace-${Date.now()}`,
       name: `${fnName}()`,
@@ -242,6 +270,10 @@ async function analyzeWithPythonTracing(
       : runtimeError
         ? "Your Python raised an error — showing the trace up to that point."
         : undefined,
+    returnValue: sandbox.returnValue,
+    hasReturnValue: !sandbox.halted && !runtimeError,
+    stdout: sandbox.stdout,
+    runtimeError,
   };
 }
 

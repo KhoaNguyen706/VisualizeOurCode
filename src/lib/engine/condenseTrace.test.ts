@@ -127,14 +127,25 @@ describe("condenseTrace", () => {
     expect(beats.every((b) => (b.structures.gridData?.length ?? 0) === 0)).toBe(true);
   });
 
-  it("does not spend a beat on lines that change nothing visible", () => {
+  it("spends a beat on each scalar the reader can watch change, outside a visit", () => {
     const source = ["def f(nums):", "    a = 1", "    b = 2", "    c = 3"].join("\n");
     const steps: TraceStep[] = [
       { line: 2, kind: "mutation", vars: { nums: [1, 2], a: 1 } },
       { line: 3, kind: "mutation", vars: { nums: [1, 2], a: 1, b: 2 } },
       { line: 4, kind: "mutation", vars: { nums: [1, 2], a: 1, b: 2, c: 3 } },
     ];
-    // The array on screen never changes and no pointer moves, so it is one beat.
+    // The array never changes, but each line is a value the panel shows
+    // changing — a sum over three numbers used to be two beats.
+    expect(run(source, steps)).toHaveLength(3);
+  });
+
+  it("does not spend a beat on a line that changes nothing at all", () => {
+    const source = ["def f(nums):", "    a = 1", "    a = 1", "    a = 1"].join("\n");
+    const steps: TraceStep[] = [
+      { line: 2, kind: "mutation", vars: { nums: [1, 2], a: 1 } },
+      { line: 3, kind: "mutation", vars: { nums: [1, 2], a: 1 } },
+      { line: 4, kind: "mutation", vars: { nums: [1, 2], a: 1 } },
+    ];
     expect(run(source, steps)).toHaveLength(1);
   });
 

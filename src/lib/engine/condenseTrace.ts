@@ -106,6 +106,10 @@ interface Beat {
   end: number;
 }
 
+function isScalarValue(v: unknown): boolean {
+  return typeof v === "number" || typeof v === "string" || typeof v === "boolean";
+}
+
 /** `"r,c"` keys whose value differs between two grids. */
 function diffGrid(
   prev: (number | string)[][] | undefined,
@@ -172,7 +176,10 @@ export function planBeats(
   );
 
   const starts: number[] = [0];
+  const isMove = (kind: LineEvent["kind"]) => kind === "take" || kind === "write" || kind === "add";
   let beatHasTake = events[0].kind === "take";
+  // A beat with no take, write or add in it yet is "quiet": bookkeeping only.
+  let beatQuiet = !isMove(events[0].kind);
 
   for (let i = 1; i < n; i += 1) {
     const e = events[i];
@@ -182,17 +189,35 @@ export function planBeats(
       salient = true;
     } else if (e.kind === "add") {
       salient = !beatHasTake;
+    } else if (steps[i].kind === "condition" && steps[i].condResult === true && beatQuiet) {
+      // Taking a branch is a decision the reader has to see made — folding
+      // "2 in seen → true" into the loop check hid the moment Two Sum found
+      // its answer. Inside a visit (a beat that already took or wrote
+      // something) the bounds checks are that visit's own bookkeeping and
+      // stay folded, and a skipped branch stays folded: nothing happened.
+      salient = true;
     } else {
       salient = visibleSignature(frames[i]) !== visibleSignature(frames[i - 1]);
       // Nothing on the canvas to carry this one, so let any real change through.
       if (!salient && !hasDrawableState(frames[i])) {
         salient = (frames[i].changedVariables?.length ?? 0) > 0;
       }
+      // A number the reader is watching changed while nothing was being
+      // visited or written — `s += n`, `complement = target - num`. That is
+      // the whole event of a scalar loop, and folding it left a sum over three
+      // numbers with two beats. Inside a visit it stays bookkeeping.
+      if (!salient && beatQuiet) {
+        const changed = frames[i].changedVariables ?? [];
+        salient = changed.some((name) => isScalarValue(steps[i].vars[name]));
+      }
     }
 
     if (salient) {
       starts.push(i);
       beatHasTake = e.kind === "take";
+      beatQuiet = !isMove(e.kind);
+    } else if (isMove(e.kind)) {
+      beatQuiet = false;
     }
   }
 
@@ -248,7 +273,8 @@ function beatMessage(
 export function condenseTrace(
   frames: TimelineFrame[],
   steps: TraceStep[],
-  sourceCode: string
+  sourceCode: string,
+  options: { everyLine?: boolean } = {}
 ): TimelineFrame[] {
   const n = Math.min(frames.length, steps.length);
   if (n === 0) return frames;
@@ -257,7 +283,11 @@ export function condenseTrace(
   const events = Array.from({ length: n }, (_, i) =>
     classifyLine(lines[steps[i].line - 1] ?? "", steps[i].kind)
   );
-  const beats = planBeats(frames, steps, sourceCode);
+  // "Every line" keeps one frame per recorded line — the debugger view — but
+  // still runs through here so each frame carries the same change markers.
+  const beats = options.everyLine
+    ? Array.from({ length: n }, (_, i) => ({ start: i, end: i + 1 }))
+    : planBeats(frames, steps, sourceCode);
 
   const out: TimelineFrame[] = [];
   let prev: TimelineFrame | null = null;

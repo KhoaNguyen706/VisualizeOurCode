@@ -171,7 +171,18 @@ async function settle(page) {
   );
 }
 
-const bodyText = (page) => page.evaluate(() => document.body.innerText);
+// The page's text minus the sample menu: its option labels name every
+// structure ("… — queue + grid"), which would trip a forbidText check.
+const bodyText = (page) =>
+  page.evaluate(() => {
+    const options = new Set(
+      Array.from(document.querySelectorAll("option")).map((o) => (o.textContent || "").trim())
+    );
+    return document.body.innerText
+      .split("\n")
+      .filter((line) => !options.has(line.trim()))
+      .join("\n");
+  });
 
 async function run() {
   const browser = await chromium.launch({ channel: "chrome", headless: true });
@@ -199,7 +210,7 @@ async function run() {
     await settle(page);
 
     const total = Number(((await bodyText(page)).match(STEP_COUNTER) || [])[2] || 0);
-    const fwd = page.locator('button[aria-label="Step forward"], button[title="Step forward"]').first();
+    const fwd = page.locator('button[aria-label^="Step forward"]').first();
     let guard = 0;
     let midBody = "";
     while ((await fwd.count()) > 0 && (await fwd.isEnabled()) && guard++ < 600) {
