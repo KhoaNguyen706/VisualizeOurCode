@@ -107,6 +107,105 @@ describe("analyzeLocally", () => {
     expect(result.scenario.timeline.length).toBeGreaterThan(0);
   });
 
+  describe("narrates the code that was actually written", () => {
+    const BRUTE_FORCE = `function twoSum(nums, target) {
+  for (let i = 0; i < nums.length; i++) {
+    for (let j = i + 1; j < nums.length; j++) {
+      if (nums[i] + nums[j] === target) {
+        return [i, j];
+      }
+    }
+  }
+  return [];
+}
+// Example: twoSum([3, 2, 4], 6)`;
+
+    const OPTIMAL = `function twoSum(nums, target) {
+  const seen = new Map();
+  for (let i = 0; i < nums.length; i++) {
+    const complement = target - nums[i];
+    if (seen.has(complement)) {
+      return [seen.get(complement), i];
+    }
+    seen.set(nums[i], i);
+  }
+  return [];
+}
+// Example: twoSum([2, 7, 11, 15], 9)`;
+
+    const messagesOf = (r: AnalyzeResult) =>
+      r.scenario.timeline.map((f) => f.message).join("\n");
+
+    it("does not describe a brute-force solution with hash-map prose", async () => {
+      // Regression: the pattern tracer ran first, so nested loops with no map
+      // anywhere were narrated as "Store map[2]=0" / "need complement=7".
+      const result = expectSuccess(await analyzeLocally(BRUTE_FORCE, "javascript", OFFLINE));
+      const text = messagesOf(result);
+
+      expect(result.source).toBe("trace");
+      expect(text).not.toMatch(/complement/i);
+      expect(text).not.toMatch(/\bmap\b/i);
+      expect(text).not.toMatch(/\bhash\b/i);
+    });
+
+    it("tells a different story for a brute-force and an optimal solution", async () => {
+      const brute = expectSuccess(await analyzeLocally(BRUTE_FORCE, "javascript", OFFLINE));
+      const optimal = expectSuccess(await analyzeLocally(OPTIMAL, "javascript", OFFLINE));
+      expect(messagesOf(brute)).not.toEqual(messagesOf(optimal));
+      // The optimal one genuinely uses a map, so saying so is accurate.
+      expect(messagesOf(optimal)).toMatch(/seen/);
+    });
+
+    it("quotes the author's own variable names and real values", async () => {
+      const code = `function countVowels(word) {
+  let tally = 0;
+  for (const ch of word) {
+    if ("aeiou".includes(ch)) {
+      tally++;
+    }
+  }
+  return tally;
+}
+// Example: countVowels("hello")`;
+      const result = expectSuccess(await analyzeLocally(code, "javascript", OFFLINE));
+      const text = messagesOf(result);
+
+      expect(text).toMatch(/tally/);
+      expect(text).toMatch(/ch = "e"/);
+      expect(text).toMatch(/Return tally {2}→ {2}2/);
+    });
+
+    it("reports the value a return statement actually produced", async () => {
+      const result = expectSuccess(await analyzeLocally(BRUTE_FORCE, "javascript", OFFLINE));
+      expect(messagesOf(result)).toMatch(/Return \[i, j\] {2}→ {2}\[1, 2\]/);
+    });
+
+    it("anchors every frame to a line of the source", async () => {
+      const result = expectSuccess(await analyzeLocally(BRUTE_FORCE, "javascript", OFFLINE));
+      const lineCount = BRUTE_FORCE.split("\n").length;
+      for (const frame of result.scenario.timeline) {
+        expect(frame.sourceLine).toBeGreaterThan(0);
+        expect(frame.sourceLine).toBeLessThanOrEqual(lineCount);
+      }
+    });
+
+    it("offers the textbook approach as a hint rather than as the trace", async () => {
+      const result = expectSuccess(await analyzeLocally(BRUTE_FORCE, "javascript", OFFLINE));
+      expect(result.patternHint?.title).toBe("Two Sum");
+      expect(result.patternHint?.commonApproach).toMatch(/hash map/i);
+      expect(result.patternHint?.yours).toBe("your solution nests 2 loops");
+      // The hint must not have leaked into the narration.
+      expect(messagesOf(result)).not.toMatch(/hash map/i);
+    });
+
+    it("labels a canonical walkthrough when the code cannot be executed", async () => {
+      const python = SAMPLES[0];
+      const result = expectSuccess(await analyzeLocally(python.code, python.lang, OFFLINE));
+      expect(result.source).not.toBe("trace");
+      expect(result.warning).toMatch(/not a trace of your code/i);
+    });
+  });
+
   it("does not hang on code containing an infinite loop", async () => {
     const code = `function spin(n) {
   let count = n;

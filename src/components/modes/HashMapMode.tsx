@@ -7,13 +7,14 @@ import { statusColors } from "@/lib/theme";
 interface HashMapModeProps {
   frame: TimelineFrame;
   compact?: boolean;
+  /** Render this map instead of the frame's primary one, when several exist. */
+  map?: Record<string, number | string>;
 }
 
-export function HashMapMode({ frame, compact = false }: HashMapModeProps) {
+export function HashMapMode({ frame, compact = false, map }: HashMapModeProps) {
   const { highlightedElements, statusType, structures, technique } = frame;
-  const { mapData } = structures;
   const colors = statusColors(statusType);
-  const entries = Object.entries(mapData);
+  const entries = Object.entries(map ?? structures.mapData);
   const isSet =
     technique === "hash_set" ||
     (entries.length > 0 && entries.every(([, v]) => v === "in set" || v === "✓"));
@@ -21,7 +22,7 @@ export function HashMapMode({ frame, compact = false }: HashMapModeProps) {
   if (isSet) {
     return (
       <div className="w-full max-w-lg mx-auto">
-        <div className="text-[10px] font-code uppercase tracking-wider text-[#858585] mb-3 text-center">
+        <div className="text-[10px] font-code uppercase tracking-wider text-[var(--mac-text-2)] mb-3 text-center">
           Set (seen values)
         </div>
         <div className={`flex flex-wrap gap-2 justify-center ${compact ? "max-h-48 overflow-y-auto" : ""}`}>
@@ -31,7 +32,7 @@ export function HashMapMode({ frame, compact = false }: HashMapModeProps) {
                 key="empty"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="text-center py-6 px-8 text-[#858585] font-code text-sm border border-dashed border-[#3c3c3c] rounded-lg"
+                className="text-center py-6 px-8 text-[var(--mac-text-2)] font-code text-sm border border-dashed border-[var(--mac-separator)] rounded-lg"
               >
                 ∅ empty set
               </motion.div>
@@ -47,7 +48,7 @@ export function HashMapMode({ frame, compact = false }: HashMapModeProps) {
                     exit={{ opacity: 0, scale: 0.6 }}
                     className={`
                       px-4 py-2 rounded-full border-2 font-mono font-bold text-sm
-                      ${isHighlighted ? `${colors.bg} ${colors.border} ${colors.glow} ${colors.text}` : "bg-[#2d2d2d] border-[#3794ff]/50 text-[#9cdcfe]"}
+                      ${isHighlighted ? `${colors.bg} ${colors.border} ${colors.glow} ${colors.text}` : "bg-[var(--mac-inset)] border-[var(--mac-accent)]/50 text-[var(--mac-accent)]"}
                     `}
                   >
                     {key}
@@ -64,9 +65,9 @@ export function HashMapMode({ frame, compact = false }: HashMapModeProps) {
   return (
     <div className="w-full max-w-lg mx-auto">
       <div className="grid grid-cols-[1fr_auto_1fr] gap-2 mb-3 px-2">
-        <span className="text-xs font-code uppercase tracking-widest text-[#3794ff] text-center">Key</span>
+        <span className="text-xs font-code uppercase tracking-widest text-[var(--mac-accent)] text-center">Key</span>
         <span />
-        <span className="text-xs font-code uppercase tracking-widest text-[#4ec9b0] text-center">Value</span>
+        <span className="text-xs font-code uppercase tracking-widest text-[var(--mac-good)] text-center">Value</span>
       </div>
 
       <div className={`space-y-2 ${compact ? "max-h-48 overflow-y-auto" : ""}`}>
@@ -77,7 +78,7 @@ export function HashMapMode({ frame, compact = false }: HashMapModeProps) {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="text-center py-8 text-[#858585] font-code text-sm border border-dashed border-[#3c3c3c]"
+              className="text-center py-8 text-[var(--mac-text-2)] font-code text-sm border border-dashed border-[var(--mac-separator)]"
             >
               {`{ } empty map`}
             </motion.div>
@@ -101,11 +102,11 @@ export function HashMapMode({ frame, compact = false }: HashMapModeProps) {
                   }}
                   className={`
                     grid grid-cols-[1fr_auto_1fr] items-center gap-3 px-4 py-3 rounded-lg border
-                    ${isHighlighted ? `${colors.bg} ${colors.border} ${colors.glow}` : "bg-[#2d2d2d] border-[#3c3c3c]"}
+                    ${isHighlighted ? `${colors.bg} ${colors.border} ${colors.glow}` : "bg-[var(--mac-inset)] border-[var(--mac-separator)]"}
                   `}
                 >
                   <FlipCell value={key} highlight={isHighlighted} align="right" />
-                  <span className="text-[#858585] font-code">→</span>
+                  <span className="text-[var(--mac-text-2)] font-code">→</span>
                   <FlipCell value={String(value)} highlight={isHighlighted} align="left" />
                 </motion.div>
               );
@@ -135,7 +136,7 @@ function FlipCell({
           animate={{ rotateX: 0, opacity: 1 }}
           exit={{ rotateX: 90, opacity: 0 }}
           transition={{ type: "spring", stiffness: 300, damping: 25 }}
-          className={`inline-block font-code font-bold text-lg ${highlight ? "text-[#9cdcfe]" : "text-[#d4d4d4]"}`}
+          className={`inline-block font-code font-bold text-lg ${highlight ? "text-[var(--mac-accent)]" : "text-[var(--mac-text)]"}`}
           style={{ transformStyle: "preserve-3d" }}
         >
           {value}

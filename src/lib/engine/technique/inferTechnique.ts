@@ -5,8 +5,20 @@ export function inferTechniqueFromCode(code: string): VisualizationTechnique {
 
   if (/\b(slow|fast)\b/.test(c) && /\.next|->next/.test(c)) return "linked_list_cycle";
   if (/\.next\s*=\s*prev|next\s*=\s*prev/.test(c)) return "linked_list";
-  if (/\bmemo\b|\bdp\s*\[|\bdp\[|grid\[|tabulation|bottom.?up/.test(c)) return "dp_grid";
-  if (/\bbfs\b|breadth.?first|deque.*append|queue.*popleft/.test(c)) return "bfs";
+  // Draining a queue front-first is the signature of BFS, and it is far more
+  // specific than merely indexing a grid, so it is settled first. Ordering
+  // these the other way round labelled every grid BFS "Dynamic Programming"
+  // and drew its steps into a DP table the author never built.
+  //
+  // The dequeue call is what to look for, not the deque's construction: a
+  // `deque` also backs a DFS stack, and the old `deque.*append` never fired at
+  // all, since `.` stops at a newline and the queue is filled lines after it is
+  // created.
+  if (/\bbfs\b|breadth.?first|\bpopleft\b|\.pop\s*\(\s*0\s*\)/.test(c)) return "bfs";
+  if (/\b(queue|frontier)\b[\s\S]*\.shift\s*\(/.test(c)) return "bfs";
+  // `grid[` is not evidence of DP -- BFS, DFS and flood fill index a grid just
+  // as often. Only the tabulation vocabulary is.
+  if (/\bmemo\b|\bdp\s*\[|\bdp\[|tabulation|bottom.?up/.test(c)) return "dp_grid";
   if (/\badjacency\b|\bneighbors?\b|\bedges?\b|\bgraph\b/.test(c)) return "graph";
   if (/\bdfs\b|depth.?first|backtrack|recurse/.test(c)) return "dfs";
   if (/\bbacktrack\b|\bpath\.append|\bpath\.pop/.test(c)) return "backtrack";

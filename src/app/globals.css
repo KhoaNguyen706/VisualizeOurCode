@@ -1,60 +1,323 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Segoe UI", system-ui, -apple-system, sans-serif;
-  --font-mono: "Cascadia Code", "Consolas", "JetBrains Mono", ui-monospace, monospace;
-  --color-vsc-bg: #1e1e1e;
-  --color-vsc-sidebar: #252526;
-  --color-vsc-panel: #181818;
-  --color-vsc-border: #3c3c3c;
-  --color-vsc-accent: #007acc;
-  --color-vsc-fg: #cccccc;
-  --color-vsc-muted: #858585;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text",
+    "Segoe UI", system-ui, sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", "Cascadia Code", ui-monospace, Menlo, Consolas,
+    monospace;
+}
+
+/*
+ * macOS appearance tokens.
+ *
+ * Components reference these by role, never by hex, so the two appearances stay
+ * in sync from one place. Dark values are declared under both the media query
+ * (the OS setting) and the data-theme scope (the in-app switch), with the switch
+ * winning in either direction.
+ */
+:root {
+  color-scheme: light;
+
+  --mac-window: #e9e9eb;
+  --mac-titlebar: #e4e4e6;
+  --mac-sidebar: #f4f4f6;
+  --mac-content: #ffffff;
+  --mac-inset: #f5f5f7;
+  --mac-raised: #ffffff;
+
+  --mac-separator: rgba(0, 0, 0, 0.09);
+  --mac-border: rgba(0, 0, 0, 0.13);
+  --mac-ring: rgba(0, 0, 0, 0.06);
+
+  --mac-text: #1d1d1f;
+  --mac-text-2: #6e6e73;
+  --mac-text-3: #98989d;
+
+  --mac-accent: #007aff;
+  --mac-accent-ink: #ffffff;
+  --mac-accent-soft: rgba(0, 122, 255, 0.12);
+
+  --mac-good: #1a7f37;
+  --mac-warn: #b25000;
+  --mac-bad: #c9333d;
+  --mac-good-soft: rgba(26, 127, 55, 0.1);
+  --mac-warn-soft: rgba(178, 80, 0, 0.1);
+  --mac-bad-soft: rgba(201, 51, 61, 0.1);
+
+  --mac-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 8px 24px rgba(0, 0, 0, 0.07);
+  --mac-shadow-sm: 0 1px 1px rgba(0, 0, 0, 0.05);
+
+  /* Sequential ramp — validated as an ordinal ramp on this surface:
+     monotone lightness, adjacent gaps >= 0.06, pale end clears 2:1. */
+  --ramp-1: #86b6ef;
+  --ramp-2: #5598e7;
+  --ramp-3: #2a78d6;
+  --ramp-4: #1c5cab;
+  --ramp-5: #104281;
+  --ramp-ink-1: #0b1a2b;
+  --ramp-ink-2: #0b1a2b;
+  --ramp-ink-3: #ffffff;
+  --ramp-ink-4: #ffffff;
+  --ramp-ink-5: #ffffff;
+
+  --cell-void: #ececef;
+  --cell-void-ink: #a1a1a6;
+  --cell-neg: #dcdce0;
+  --cell-neg-ink: #6e6e73;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --mac-window: #1a1a1c;
+    --mac-titlebar: #2a2a2c;
+    --mac-sidebar: #202022;
+    --mac-content: #1c1c1e;
+    --mac-inset: #232326;
+    --mac-raised: #2c2c2e;
+
+    --mac-separator: rgba(255, 255, 255, 0.1);
+    --mac-border: rgba(255, 255, 255, 0.14);
+    --mac-ring: rgba(255, 255, 255, 0.08);
+
+    --mac-text: #f5f5f7;
+    --mac-text-2: #a1a1a6;
+    --mac-text-3: #7c7c81;
+
+    --mac-accent: #0a84ff;
+    --mac-accent-ink: #ffffff;
+    --mac-accent-soft: rgba(10, 132, 255, 0.2);
+
+    --mac-good: #30d158;
+    --mac-warn: #ff9f0a;
+    --mac-bad: #ff453a;
+    --mac-good-soft: rgba(48, 209, 88, 0.16);
+    --mac-warn-soft: rgba(255, 159, 10, 0.16);
+    --mac-bad-soft: rgba(255, 69, 58, 0.16);
+
+    --mac-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 10px 30px rgba(0, 0, 0, 0.4);
+    --mac-shadow-sm: 0 1px 1px rgba(0, 0, 0, 0.4);
+
+    --ramp-1: #cde2fb;
+    --ramp-2: #9ec5f4;
+    --ramp-3: #5598e7;
+    --ramp-4: #2a78d6;
+    --ramp-5: #184f95;
+    --ramp-ink-1: #0b1a2b;
+    --ramp-ink-2: #0b1a2b;
+    --ramp-ink-3: #0b1a2b;
+    --ramp-ink-4: #ffffff;
+    --ramp-ink-5: #ffffff;
+
+    --cell-void: #242426;
+    --cell-void-ink: #5a5a5f;
+    --cell-neg: #3a3a3c;
+    --cell-neg-ink: #98989d;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --mac-window: #1a1a1c;
+  --mac-titlebar: #2a2a2c;
+  --mac-sidebar: #202022;
+  --mac-content: #1c1c1e;
+  --mac-inset: #232326;
+  --mac-raised: #2c2c2e;
+
+  --mac-separator: rgba(255, 255, 255, 0.1);
+  --mac-border: rgba(255, 255, 255, 0.14);
+  --mac-ring: rgba(255, 255, 255, 0.08);
+
+  --mac-text: #f5f5f7;
+  --mac-text-2: #a1a1a6;
+  --mac-text-3: #7c7c81;
+
+  --mac-accent: #0a84ff;
+  --mac-accent-ink: #ffffff;
+  --mac-accent-soft: rgba(10, 132, 255, 0.2);
+
+  --mac-good: #30d158;
+  --mac-warn: #ff9f0a;
+  --mac-bad: #ff453a;
+  --mac-good-soft: rgba(48, 209, 88, 0.16);
+  --mac-warn-soft: rgba(255, 159, 10, 0.16);
+  --mac-bad-soft: rgba(255, 69, 58, 0.16);
+
+  --mac-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 10px 30px rgba(0, 0, 0, 0.4);
+  --mac-shadow-sm: 0 1px 1px rgba(0, 0, 0, 0.4);
+
+  --ramp-1: #cde2fb;
+  --ramp-2: #9ec5f4;
+  --ramp-3: #5598e7;
+  --ramp-4: #2a78d6;
+  --ramp-5: #184f95;
+  --ramp-ink-1: #0b1a2b;
+  --ramp-ink-2: #0b1a2b;
+  --ramp-ink-3: #0b1a2b;
+  --ramp-ink-4: #ffffff;
+  --ramp-ink-5: #ffffff;
+
+  --cell-void: #242426;
+  --cell-void-ink: #5a5a5f;
+  --cell-neg: #3a3a3c;
+  --cell-neg-ink: #98989d;
 }
 
 html,
 body {
   height: 100%;
-  background: var(--color-vsc-bg);
-  color: var(--color-vsc-fg);
+  background: var(--mac-window);
+  color: var(--mac-text);
 }
 
 body {
   font-family: var(--font-sans);
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.005em;
 }
 
 .font-code {
   font-family: var(--font-mono);
+  letter-spacing: 0;
 }
+
+/* ---- macOS control layer ------------------------------------------------ */
+
+.mac-card {
+  background: var(--mac-content);
+  border: 1px solid var(--mac-separator);
+  border-radius: 10px;
+  box-shadow: var(--mac-shadow-sm);
+}
+
+.mac-inset {
+  background: var(--mac-inset);
+  border: 1px solid var(--mac-separator);
+  border-radius: 8px;
+}
+
+/* Pill button, the macOS push-button shape. */
+.mac-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 11px;
+  border-radius: 6px;
+  border: 1px solid var(--mac-border);
+  background: var(--mac-raised);
+  color: var(--mac-text);
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: var(--mac-shadow-sm);
+  transition: filter 0.12s ease, opacity 0.12s ease;
+}
+.mac-btn:hover:not(:disabled) {
+  filter: brightness(0.97);
+}
+.mac-btn:active:not(:disabled) {
+  filter: brightness(0.93);
+}
+.mac-btn:disabled {
+  opacity: 0.4;
+}
+
+.mac-btn-primary {
+  background: var(--mac-accent);
+  border-color: transparent;
+  color: var(--mac-accent-ink);
+}
+.mac-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.07);
+}
+
+.mac-field {
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 6px;
+  border: 1px solid var(--mac-border);
+  background: var(--mac-raised);
+  color: var(--mac-text);
+  font-size: 12px;
+  box-shadow: var(--mac-shadow-sm);
+  outline: none;
+}
+.mac-field::placeholder {
+  color: var(--mac-text-3);
+}
+.mac-field:focus {
+  border-color: var(--mac-accent);
+  box-shadow: 0 0 0 3px var(--mac-accent-soft);
+}
+
+.mac-select {
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--mac-text-2) 50%),
+    linear-gradient(135deg, var(--mac-text-2) 50%, transparent 50%);
+  background-position: calc(100% - 13px) 11px, calc(100% - 9px) 11px;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+  padding-right: 24px;
+}
+
+/* Grouped sidebar row, as in Finder / Xcode navigators. */
+.mac-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--mac-text);
+  font-size: 12.5px;
+}
+.mac-row[data-selected="true"] {
+  background: var(--mac-accent);
+  color: var(--mac-accent-ink);
+}
+
+.mac-label {
+  font-size: 10.5px;
+  font-weight: 590;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mac-text-3);
+}
+
+/* ---- scrollbars: macOS overlay style ------------------------------------ */
 
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 11px;
+  height: 11px;
 }
-
 ::-webkit-scrollbar-track {
   background: transparent;
 }
-
 ::-webkit-scrollbar-thumb {
-  background: #424242;
+  background: color-mix(in srgb, var(--mac-text) 26%, transparent);
+  border-radius: 6px;
+  border: 3px solid transparent;
+  background-clip: content-box;
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: #4f4f4f;
+  background: color-mix(in srgb, var(--mac-text) 40%, transparent);
+  background-clip: content-box;
 }
-
 ::-webkit-scrollbar-corner {
-  background: #1e1e1e;
+  background: transparent;
 }
 
 select option {
-  background: #252526;
-  color: #cccccc;
+  background: var(--mac-raised);
+  color: var(--mac-text);
 }
 
 input[type="range"] {
-  accent-color: #007acc;
+  accent-color: var(--mac-accent);
 }

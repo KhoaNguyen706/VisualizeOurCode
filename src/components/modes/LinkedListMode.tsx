@@ -58,7 +58,7 @@ export function LinkedListMode({ frame }: LinkedListModeProps) {
               orient="auto"
               markerUnits="strokeWidth"
             >
-              <path d="M0,0 L10,4 L0,8 Z" fill="#3794ff" />
+              <path d="M0,0 L10,4 L0,8 Z" fill="var(--mac-accent)" />
             </marker>
             <marker
               id="ll-arrow"
@@ -80,7 +80,7 @@ export function LinkedListMode({ frame }: LinkedListModeProps) {
               orient="auto"
               markerUnits="strokeWidth"
             >
-              <path d="M0,0 L10,4 L0,8 Z" fill="#f48771" />
+              <path d="M0,0 L10,4 L0,8 Z" fill="var(--mac-bad)" />
             </marker>
             <marker
               id="ll-arrow-null"
@@ -90,7 +90,7 @@ export function LinkedListMode({ frame }: LinkedListModeProps) {
               refY="4"
               orient="auto"
             >
-              <circle cx="4" cy="4" r="3" fill="none" stroke="#858585" strokeWidth="1.5" />
+              <circle cx="4" cy="4" r="3" fill="none" stroke="var(--mac-text-2)" strokeWidth="1.5" />
             </marker>
           </defs>
 
@@ -103,7 +103,7 @@ export function LinkedListMode({ frame }: LinkedListModeProps) {
                 highlightedElements.includes(node.id) ||
                 (node.next != null && highlightedElements.includes(node.next));
 
-              const stroke = isActive ? "#3794ff" : "#6e6e6e";
+              const stroke = isActive ? "var(--mac-accent)" : "#6e6e6e";
               const marker = isActive ? "url(#ll-arrow-active)" : "url(#ll-arrow)";
 
               if (!node.next) {
@@ -116,7 +116,7 @@ export function LinkedListMode({ frame }: LinkedListModeProps) {
                       y1={ARROW_Y}
                       x2={x2}
                       y2={ARROW_Y}
-                      stroke="#858585"
+                      stroke="var(--mac-text-2)"
                       strokeWidth={1.5}
                       strokeDasharray="3 3"
                       markerEnd="url(#ll-arrow-null)"
@@ -128,7 +128,7 @@ export function LinkedListMode({ frame }: LinkedListModeProps) {
                     <motion.text
                       x={x2 + 6}
                       y={ARROW_Y + 4}
-                      fill="#858585"
+                      fill="var(--mac-text-2)"
                       fontSize={11}
                       fontFamily="monospace"
                       initial={{ opacity: 0 }}
@@ -146,7 +146,7 @@ export function LinkedListMode({ frame }: LinkedListModeProps) {
               const goingBack = target.x < layout.x;
               const isCycleEdge = goingBack && nodeIndex(node.next!) < nodeIndex(node.id);
               const path = buildLinkPath(layout, target, goingBack);
-              const edgeStroke = isCycleEdge ? "#f48771" : stroke;
+              const edgeStroke = isCycleEdge ? "var(--mac-bad)" : stroke;
               const edgeMarker = isCycleEdge ? "url(#ll-arrow-cycle)" : marker;
 
               return (
@@ -171,7 +171,7 @@ export function LinkedListMode({ frame }: LinkedListModeProps) {
             <motion.path
               d={buildPointerPath(layoutMap[currentId], layoutMap[prevId])}
               fill="none"
-              stroke="#4ec9b0"
+              stroke="var(--mac-good)"
               strokeWidth={2}
               strokeDasharray="5 4"
               markerEnd="url(#ll-arrow-active)"
@@ -209,7 +209,7 @@ export function LinkedListMode({ frame }: LinkedListModeProps) {
                       initial={{ opacity: 0, y: 4 }}
                       animate={{ opacity: 1, y: 0 }}
                       className={`text-[10px] font-mono font-bold uppercase tracking-wider ${
-                        isFast ? "text-[#ce9178]" : isSlow ? "text-[#4ec9b0]" : isCurrent ? "text-[#3794ff]" : "text-[#4ec9b0]"
+                        isFast ? "text-[var(--mac-text-2)]" : isSlow ? "text-[var(--mac-good)]" : isCurrent ? "text-[var(--mac-accent)]" : "text-[var(--mac-good)]"
                       }`}
                     >
                       {pointerLabel}
@@ -223,13 +223,13 @@ export function LinkedListMode({ frame }: LinkedListModeProps) {
                     className={`
                       w-[72px] h-[72px] rounded-lg border-2 flex items-center justify-center
                       font-mono font-bold text-xl
-                      ${isHighlighted ? `${colors.bg} ${colors.border} ${colors.glow}` : "bg-[#2d2d2d] border-[#3c3c3c]"}
-                      ${isCurrent || isFast ? "ring-2 ring-[#3794ff]" : ""}
-                      ${isPrev || isSlow ? "ring-2 ring-[#4ec9b0]/60" : ""}
-                      ${isFast ? "ring-[#ce9178]" : ""}
+                      ${isHighlighted ? `${colors.bg} ${colors.border} ${colors.glow}` : "bg-[var(--mac-inset)] border-[var(--mac-separator)]"}
+                      ${isCurrent || isFast ? "ring-2 ring-[var(--mac-accent)]" : ""}
+                      ${isPrev || isSlow ? "ring-2 ring-[var(--mac-good)]/60" : ""}
+                      ${isFast ? "ring-[var(--mac-text-2)]" : ""}
                     `}
                     style={{
-                      boxShadow: "0 4px 0 #1e1e1e, 0 6px 12px rgba(0,0,0,0.3)",
+                      boxShadow: "0 4px 0 var(--mac-content), 0 6px 12px rgba(0,0,0,0.3)",
                     }}
                     animate={isHighlighted ? { y: [0, -4, 0] } : {}}
                     transition={{ repeat: isHighlighted ? 2 : 0, duration: 0.35 }}
@@ -237,7 +237,7 @@ export function LinkedListMode({ frame }: LinkedListModeProps) {
                     {node.value}
                   </motion.div>
 
-                  <span className="text-[9px] font-code text-[#858585]">{node.id}</span>
+                  <span className="text-[9px] font-code text-[var(--mac-text-2)]">{node.id}</span>
                   {nextNode && (
                     <span className="text-[8px] font-code text-[#6e6e6e]">
                       .next → {nextNode.id}

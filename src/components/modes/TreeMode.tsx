@@ -26,7 +26,7 @@ export function TreeMode({ frame }: TreeModeProps) {
 
   if (!treeData.length) {
     return (
-      <div className="text-center py-12 text-[#858585] font-code text-sm">
+      <div className="text-center py-12 text-[var(--mac-text-2)] font-code text-sm">
         Empty tree
       </div>
     );
@@ -53,7 +53,7 @@ export function TreeMode({ frame }: TreeModeProps) {
                 y1={edge.y1}
                 x2={edge.x2}
                 y2={edge.y2}
-                stroke={active ? "#3794ff" : "#3c3c3c"}
+                stroke={active ? "var(--mac-accent)" : "var(--mac-separator)"}
                 strokeWidth={active ? 2.5 : 1.5}
                 initial={{ pathLength: 0, opacity: 0 }}
                 animate={{ pathLength: 1, opacity: 1 }}
@@ -76,17 +76,17 @@ export function TreeMode({ frame }: TreeModeProps) {
                 ? "rgba(244,135,113,0.2)"
                 : isHighlighted
                   ? "rgba(55,148,255,0.15)"
-                  : "#2d2d2d";
+                  : "var(--mac-inset)";
 
             const stroke = isSuccess
-              ? "#4ec9b0"
+              ? "var(--mac-good)"
               : isFail
-                ? "#f48771"
+                ? "var(--mac-bad)"
                 : isCurrent
-                  ? "#3794ff"
+                  ? "var(--mac-accent)"
                   : isHighlighted
-                    ? "#3794ff"
-                    : "#3c3c3c";
+                    ? "var(--mac-accent)"
+                    : "var(--mac-separator)";
 
             return (
               <motion.g
@@ -113,7 +113,7 @@ export function TreeMode({ frame }: TreeModeProps) {
                   y={node.y}
                   textAnchor="middle"
                   dominantBaseline="central"
-                  className="fill-[#d4d4d4] font-code font-bold"
+                  className="fill-[var(--mac-text)] font-code font-bold"
                   fontSize={String(node.value).length > 3 ? 11 : 14}
                 >
                   {node.value}
@@ -135,8 +135,8 @@ export function TreeMode({ frame }: TreeModeProps) {
       </svg>
 
       {activePointers.depth !== undefined && (
-        <p className="text-center text-xs font-code text-[#858585] mt-2">
-          recursion depth: <span className="text-[#3794ff]">{activePointers.depth}</span>
+        <p className="text-center text-xs font-code text-[var(--mac-text-2)] mt-2">
+          recursion depth: <span className="text-[var(--mac-accent)]">{activePointers.depth}</span>
         </p>
       )}
     </div>

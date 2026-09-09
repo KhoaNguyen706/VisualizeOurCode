@@ -8,6 +8,7 @@ import { Header } from "@/components/layout/Header";
 import { CodeEditor } from "@/components/layout/CodeEditor";
 import { VisualizationCanvas } from "@/components/engine/VisualizationCanvas";
 import { TraceStepView } from "@/components/engine/TraceStepView";
+import { PatternHintBanner } from "@/components/engine/PatternHintBanner";
 import { StateInspector } from "@/components/engine/StateInspector";
 import { TimelinePlayer } from "@/components/engine/TimelinePlayer";
 import type { VisualizeMeta } from "@/components/layout/CodeEditor";
@@ -28,32 +29,40 @@ export function VisualizerApp() {
   return (
     <div
       className="flex flex-col h-screen overflow-hidden"
-      style={{ background: "#1e1e1e" }}
+      style={{ background: "var(--mac-window)" }}
       suppressHydrationWarning
     >
       <Header />
 
       <div className="flex flex-1 min-h-0">
-        <CodeEditor onScenarioGenerated={handleVisualizeResult} />
+        <CodeEditor
+          onScenarioGenerated={handleVisualizeResult}
+          activeLine={hasVisualization ? player.currentFrame?.sourceLine : undefined}
+          coveredLines={hasVisualization ? player.currentFrame?.coveredLines : undefined}
+        />
 
-        {/* Center — editor group / visualization */}
-        <main className="flex-1 min-w-0 flex flex-col" style={{ background: "#1e1e1e" }}>
+        {/* Center — the visualization itself */}
+        <main
+          className="flex-1 min-w-0 flex flex-col"
+          style={{ background: "var(--mac-content)" }}
+        >
           <div
-            className="h-[35px] shrink-0 flex items-end"
-            style={{ background: "#2d2d2d", borderBottom: "1px solid #252526" }}
+            className="h-[36px] shrink-0 flex items-center px-4 gap-2"
+            style={{ borderBottom: "1px solid var(--mac-separator)" }}
           >
-            <div
-              className="h-full flex items-center gap-2 px-4 text-[13px] text-[#ffffff]"
-              style={{ background: "#1e1e1e", borderRight: "1px solid #252526", borderTop: "1px solid #007acc" }}
-            >
-              <GraphIcon />
+            <GraphIcon />
+            <span className="text-[12.5px] font-medium" style={{ color: "var(--mac-text)" }}>
               Visualization
-            </div>
+            </span>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-auto p-4">
+          <div className="flex-1 min-h-0 overflow-auto p-5">
             {hasVisualization ? (
               <>
+                <PatternHintBanner
+                  hint={visualizeMeta?.patternHint}
+                  isLiveTrace={visualizeMeta?.source === "trace"}
+                />
                 <TraceStepView frame={player.currentFrame} warning={visualizeMeta?.warning} />
                 <VisualizationCanvas frame={player.currentFrame} />
               </>
@@ -88,20 +97,37 @@ export function VisualizerApp() {
 
 function EmptyVisualization() {
   return (
-    <div className="h-full flex flex-col items-center justify-center text-center gap-4 select-none">
-      <div className="opacity-30">
-        <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
-          <rect x="8" y="20" width="18" height="18" rx="2" stroke="#3794ff" strokeWidth="2" />
-          <rect x="32" y="20" width="18" height="18" rx="2" stroke="#3794ff" strokeWidth="2" />
-          <rect x="56" y="20" width="18" height="18" rx="2" stroke="#3794ff" strokeWidth="2" />
-          <path d="M17 50 L40 62 L63 50" stroke="#4ec9b0" strokeWidth="2" fill="none" />
-          <circle cx="40" cy="38" r="6" stroke="#858585" strokeWidth="1.5" fill="none" />
-        </svg>
-      </div>
-      <div>
-        <p className="text-[#cccccc] text-[14px]">No visualization yet</p>
-        <p className="text-[#858585] text-[12px] mt-1 font-code">
-          Paste DSA code (Python, JS, Java, C++) and press <span className="text-[#3794ff]">Visualize</span>
+    <div className="h-full flex flex-col items-center justify-center text-center gap-5 select-none">
+      <svg width="132" height="76" viewBox="0 0 132 76" fill="none" aria-hidden>
+        {[0, 1, 2, 3].map((i) => (
+          <rect
+            key={i}
+            x={6 + i * 31}
+            y={10}
+            width="25"
+            height="25"
+            rx="6"
+            fill="var(--ramp-1)"
+            opacity={1 - i * 0.22}
+          />
+        ))}
+        <path
+          d="M18 52 H114"
+          stroke="var(--mac-separator)"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+        <circle cx="18" cy="52" r="4.5" fill="var(--mac-accent)" />
+        <circle cx="66" cy="52" r="4.5" fill="var(--mac-accent)" opacity="0.45" />
+        <circle cx="114" cy="52" r="4.5" fill="var(--mac-accent)" opacity="0.2" />
+      </svg>
+      <div className="max-w-[380px]">
+        <p className="text-[15px] font-medium" style={{ color: "var(--mac-text)" }}>
+          Nothing traced yet
+        </p>
+        <p className="text-[12.5px] mt-1.5 leading-relaxed" style={{ color: "var(--mac-text-2)" }}>
+          Paste your solution — Python or JavaScript runs for real, mistakes and all — then
+          press <span style={{ color: "var(--mac-accent)" }}>Visualize</span>.
         </p>
       </div>
     </div>
@@ -110,7 +136,15 @@ function EmptyVisualization() {
 
 function GraphIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#3794ff" strokeWidth="1.2">
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="var(--mac-accent)"
+      strokeWidth="1.3"
+      aria-hidden
+    >
       <circle cx="4" cy="12" r="2" />
       <circle cx="12" cy="4" r="2" />
       <circle cx="12" cy="12" r="2" />

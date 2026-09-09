@@ -6,7 +6,7 @@ function LoadingShell() {
   return (
     <div
       className="h-screen flex items-center justify-center text-[13px]"
-      style={{ background: "#1e1e1e", color: "#858585" }}
+      style={{ background: "var(--mac-content)", color: "var(--mac-text-2)" }}
       suppressHydrationWarning
     >
       Loading VisualizeOurCode…

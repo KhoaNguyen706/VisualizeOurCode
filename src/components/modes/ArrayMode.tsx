@@ -10,9 +10,12 @@ interface ArrayModeProps {
   compact?: boolean;
 }
 
-const SW_COLOR = "#3794ff";
-const TP_COLOR = "#f0a830";
-const BS_COLOR = "#c586c0";
+// Concrete hexes, not tokens: these are concatenated with alpha suffixes below,
+// and `var(--x)66` is not a colour. Each is a macOS system accent chosen to read
+// on both the light and the dark surface.
+const SW_COLOR = "#0a84ff"; // sliding window — blue
+const TP_COLOR = "#ff9f0a"; // two pointers — orange
+const BS_COLOR = "#bf5af2"; // binary search — purple
 
 function isLeftPointerLabel(label: string): boolean {
   return ["left", "l", "lo", "low", "i"].includes(label);
@@ -35,6 +38,7 @@ export function ArrayMode({ frame, compact = false }: ArrayModeProps) {
   } = frame;
   const { arrayData } = structures;
   const colors = statusColors(statusType);
+  const changedIdx = new Set(frame.changedIndices ?? []);
   const layout = computeArrayLayout(arrayData.length, compact);
   const { cellPx, gap, fontSize, indexFontSize, totalWidth } = layout;
 
@@ -131,8 +135,8 @@ export function ArrayMode({ frame, compact = false }: ArrayModeProps) {
           animate={{ opacity: 1, y: 0 }}
           className={`px-4 py-2 rounded-lg border text-xs font-code uppercase tracking-wider ${
             conditionMet
-              ? "border-[#4ec9b0] bg-[#4ec9b0]/15 text-[#4ec9b0]"
-              : "border-[#f48771] bg-[#f48771]/15 text-[#f48771]"
+              ? "border-[var(--mac-good)] bg-[var(--mac-good)]/15 text-[var(--mac-good)]"
+              : "border-[var(--mac-bad)] bg-[var(--mac-bad)]/15 text-[var(--mac-bad)]"
           }`}
         >
           {conditionLabel} → {conditionMet ? "YES" : "NO"}
@@ -140,8 +144,8 @@ export function ArrayMode({ frame, compact = false }: ArrayModeProps) {
       )}
 
       {technique === "hash_set" && currentI !== undefined && currentNum !== undefined && currentNum !== null && (
-        <div className="text-[11px] font-code text-[#9cdcfe]">
-          i={currentI} · num = <span className="font-bold text-[#dcdcaa]">{String(currentNum)}</span>
+        <div className="text-[11px] font-code text-[var(--mac-accent)]">
+          i={currentI} · num = <span className="font-bold text-[var(--mac-warn)]">{String(currentNum)}</span>
         </div>
       )}
 
@@ -173,7 +177,7 @@ export function ArrayMode({ frame, compact = false }: ArrayModeProps) {
             <motion.div
               layout
               key={`sw-${leftIdx}-${rightIdx}`}
-              className="absolute pointer-events-none rounded-xl border-2 border-[#3794ff]/70"
+              className="absolute pointer-events-none rounded-xl border-2 border-[var(--mac-accent)]/70"
               style={{
                 left: leftIdx! * (cellPx + gap),
                 top: 28,
@@ -194,6 +198,7 @@ export function ArrayMode({ frame, compact = false }: ArrayModeProps) {
                 showTwoPointerPair && !isSlidingWindow && (index === leftIdx || index === rightIdx);
               const isMidCell = isBinarySearch && midIdx === index;
               const isConditionCell = currentI === index && conditionMet !== undefined;
+              const justChanged = changedIdx.has(index);
               const hasTopPtr = tops.length > 0;
               const hasBottomPtr = bottoms.length > 0;
 
@@ -202,7 +207,12 @@ export function ArrayMode({ frame, compact = false }: ArrayModeProps) {
                   key={`${index}-${value}`}
                   layout
                   initial={{ opacity: 0, scale: 0.85 }}
-                  animate={{ opacity: 1, scale: isHighlighted || isTwoPointerEnd ? 1.06 : 1 }}
+                  animate={
+                    justChanged
+                      ? { opacity: 1, scale: [1.18, 1] }
+                      : { opacity: 1, scale: isHighlighted || isTwoPointerEnd ? 1.06 : 1 }
+                  }
+                  transition={justChanged ? { duration: 0.4 } : undefined}
                   className="flex flex-col items-center shrink-0 relative z-10"
                   style={{ width: cellPx }}
                 >
@@ -231,11 +241,12 @@ export function ArrayMode({ frame, compact = false }: ArrayModeProps) {
                   <motion.div
                     className={`
                       rounded-lg border-2 flex items-center justify-center font-mono font-bold
-                      ${isHighlighted ? `${colors.bg} ${colors.border} ${colors.glow}` : "border-[#3c3c3c]"}
+                      ${isHighlighted ? `${colors.bg} ${colors.border} ${colors.glow}` : "border-[var(--mac-separator)]"}
                       ${isTwoPointerEnd ? "ring-2 ring-[#f0a830]/80" : ""}
                       ${isMidCell ? "ring-2 ring-[#c586c0]/80" : ""}
-                      ${inWindow && !isHighlighted ? "border-[#3794ff]/70 bg-[#3794ff]/12" : ""}
-                      ${isConditionCell ? (conditionMet ? "ring-2 ring-[#4ec9b0]/80" : "ring-2 ring-[#f48771]/80") : ""}
+                      ${inWindow && !isHighlighted ? "border-[var(--mac-accent)]/70 bg-[var(--mac-accent)]/12" : ""}
+                      ${isConditionCell ? (conditionMet ? "ring-2 ring-[var(--mac-good)]/80" : "ring-2 ring-[var(--mac-bad)]/80") : ""}
+                      ${justChanged && !isHighlighted ? "ring-2 ring-[var(--mac-good)]" : ""}
                     `}
                     style={{
                       width: cellPx,
@@ -253,8 +264,8 @@ export function ArrayMode({ frame, compact = false }: ArrayModeProps) {
                               ? "rgba(197,134,192,0.1)"
                               : inWindow
                                 ? undefined
-                                : "#2d2d2d",
-                      boxShadow: "0 3px 0 #1e1e1e",
+                                : "var(--mac-inset)",
+                      boxShadow: "0 3px 0 var(--mac-content)",
                     }}
                   >
                     <span
@@ -262,12 +273,12 @@ export function ArrayMode({ frame, compact = false }: ArrayModeProps) {
                         isHighlighted
                           ? colors.text
                           : inWindow
-                            ? "text-[#3794ff]"
+                            ? "text-[var(--mac-accent)]"
                             : isTwoPointerEnd
                               ? "text-[#f0a830]"
                               : isMidCell
                                 ? "text-[#c586c0]"
-                                : "text-[#d4d4d4]"
+                                : "text-[var(--mac-text)]"
                       }
                     >
                       {value}
@@ -279,7 +290,7 @@ export function ArrayMode({ frame, compact = false }: ArrayModeProps) {
                     className="font-code mt-1"
                     style={{
                       fontSize: indexFontSize,
-                      color: isTwoPointerEnd ? TP_COLOR : inWindow ? SW_COLOR : "#858585",
+                      color: isTwoPointerEnd ? TP_COLOR : inWindow ? SW_COLOR : "var(--mac-text-2)",
                     }}
                   >
                     {index}

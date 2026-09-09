@@ -38,29 +38,29 @@ export function TimelinePlayer({
   return (
     <div
       className="shrink-0"
-      style={{ background: "#181818", borderTop: "1px solid #3c3c3c" }}
+      style={{ background: "var(--mac-window)", borderTop: "1px solid var(--mac-separator)" }}
     >
       {/* Panel tab bar */}
       <div
         className="h-[30px] flex items-center px-3 gap-4 text-[11px] uppercase tracking-wide"
-        style={{ borderBottom: "1px solid #3c3c3c" }}
+        style={{ borderBottom: "1px solid var(--mac-separator)" }}
       >
-        <span className="text-[#ffffff] font-semibold" style={{ borderBottom: "1px solid #007acc", paddingBottom: 6 }}>
+        <span className="text-[var(--mac-text)] font-semibold" style={{ borderBottom: "1px solid var(--mac-accent)", paddingBottom: 6 }}>
           Timeline
         </span>
-        <span className="text-[#858585]">Output</span>
-        <span className="text-[#858585]">Debug</span>
+        <span className="text-[var(--mac-text-2)]">Output</span>
+        <span className="text-[var(--mac-text-2)]">Debug</span>
       </div>
 
       <div className="px-4 py-3 space-y-3">
         <div className="flex items-center gap-3">
           <div
             className="flex-1 h-[3px] relative cursor-pointer"
-            style={{ background: "#3c3c3c" }}
+            style={{ background: "var(--mac-separator)" }}
           >
             <motion.div
               className="absolute inset-y-0 left-0"
-              style={{ width: `${progress * 100}%`, background: "#007acc" }}
+              style={{ width: `${progress * 100}%`, background: "var(--mac-accent)" }}
               layout
             />
             <input
@@ -74,7 +74,7 @@ export function TimelinePlayer({
               aria-label="Timeline progress"
             />
           </div>
-          <span className="text-[11px] font-code text-[#858585] tabular-nums min-w-[72px] text-right">
+          <span className="text-[11px] font-code text-[var(--mac-text-2)] tabular-nums min-w-[72px] text-right">
             {disabled ? "— / —" : `${currentIndex + 1} / ${totalSteps}`}
           </span>
         </div>
@@ -101,7 +101,7 @@ export function TimelinePlayer({
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-[11px] text-[#858585]">Speed</span>
+            <span className="text-[11px] text-[var(--mac-text-2)]">Speed</span>
             <input
               type="range"
               min={0.25}
@@ -113,7 +113,7 @@ export function TimelinePlayer({
               className="w-20 disabled:opacity-40"
               aria-label="Animation speed"
             />
-            <span className="text-[11px] font-code text-[#3794ff] tabular-nums w-8">{speed}x</span>
+            <span className="text-[11px] font-code text-[var(--mac-accent)] tabular-nums w-8">{speed}x</span>
           </div>
         </div>
       </div>
@@ -143,14 +143,14 @@ function ControlButton({
       aria-label={label}
       className="w-7 h-7 flex items-center justify-center transition-colors disabled:opacity-30 disabled:cursor-not-allowed rounded-sm"
       style={{
-        color: primary ? "#ffffff" : "#cccccc",
-        background: primary ? "#0e639c" : "transparent",
+        color: primary ? "var(--mac-accent-ink)" : "var(--mac-text)",
+        background: primary ? "var(--mac-accent)" : "transparent",
       }}
       onMouseEnter={(e) => {
-        if (!disabled) e.currentTarget.style.background = primary ? "#1177bb" : "#2a2d2e";
+        if (!disabled) e.currentTarget.style.background = primary ? "var(--mac-accent)" : "var(--mac-inset)";
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.background = primary ? "#0e639c" : "transparent";
+        e.currentTarget.style.background = primary ? "var(--mac-accent)" : "transparent";
       }}
     >
       {children}

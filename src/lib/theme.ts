@@ -1,52 +1,37 @@
-/** VS Code Dark+ inspired palette */
-export const vscode = {
-  titleBar: "#323233",
-  activityBar: "#333333",
-  sidebar: "#252526",
-  editor: "#1e1e1e",
-  panel: "#181818",
-  border: "#3c3c3c",
-  borderLight: "#474747",
-  foreground: "#cccccc",
-  muted: "#858585",
-  disabled: "#5a5a5a",
-  accent: "#007acc",
-  accentHover: "#1a8ad4",
-  tabActive: "#1e1e1e",
-  tabInactive: "#2d2d2d",
-  tabBorder: "#252526",
-  lineNumber: "#858585",
-  selection: "#264f78",
-  button: "#0e639c",
-  buttonHover: "#1177bb",
-} as const;
-
+/**
+ * Status styling for the visualization modes.
+ *
+ * Every value resolves through a macOS appearance token defined in globals.css,
+ * so one class set serves both appearances and the two cannot drift apart. An
+ * opacity modifier on an arbitrary value compiles to `color-mix`, which is why
+ * `/14` is safe on a `var()` here.
+ */
 export const theme = {
-  canvas: "bg-[#1e1e1e]",
-  surface: "bg-[#252526]",
-  border: "border-[#3c3c3c]",
-  text: "text-[#cccccc]",
-  muted: "text-[#858585]",
+  canvas: "bg-[var(--mac-content)]",
+  surface: "bg-[var(--mac-sidebar)]",
+  border: "border-[var(--mac-separator)]",
+  text: "text-[var(--mac-text)]",
+  muted: "text-[var(--mac-text-2)]",
   explore: {
-    bg: "bg-[#264f78]/40",
-    border: "border-[#3794ff]",
-    text: "text-[#3794ff]",
-    glow: "shadow-[0_0_12px_rgba(55,148,255,0.25)]",
-    accent: "#3794ff",
+    bg: "bg-[var(--mac-accent)]/12",
+    border: "border-[var(--mac-accent)]",
+    text: "text-[var(--mac-accent)]",
+    glow: "shadow-[0_0_0_3px_var(--mac-accent-soft)]",
+    accent: "var(--mac-accent)",
   },
   success: {
-    bg: "bg-[#4ec9b0]/15",
-    border: "border-[#4ec9b0]",
-    text: "text-[#4ec9b0]",
-    glow: "shadow-[0_0_12px_rgba(78,201,176,0.25)]",
-    accent: "#4ec9b0",
+    bg: "bg-[var(--mac-good)]/14",
+    border: "border-[var(--mac-good)]",
+    text: "text-[var(--mac-good)]",
+    glow: "shadow-[0_0_0_3px_var(--mac-good-soft)]",
+    accent: "var(--mac-good)",
   },
   fail: {
-    bg: "bg-[#f48771]/15",
-    border: "border-[#f48771]",
-    text: "text-[#f48771]",
-    glow: "shadow-[0_0_12px_rgba(244,135,113,0.25)]",
-    accent: "#f48771",
+    bg: "bg-[var(--mac-bad)]/14",
+    border: "border-[var(--mac-bad)]",
+    text: "text-[var(--mac-bad)]",
+    glow: "shadow-[0_0_0_3px_var(--mac-bad-soft)]",
+    accent: "var(--mac-bad)",
   },
 } as const;
 

@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { CODE_SAMPLES } from "@/lib/gemini/samples";
 import { analyzeLocally } from "@/lib/engine/analyzeLocally";
+import type { AnalyzeResult } from "@/lib/engine/analyzeLocally";
+import type { PatternHint } from "@/lib/engine/patternHint";
 import { fetchAITemplates } from "@/lib/gemini/templateCache";
 import { scenarios } from "@/lib/scenarios";
 import type { Scenario } from "@/lib/types";
@@ -21,15 +23,25 @@ export interface VisualizeMeta {
   traceSteps: number;
   warning?: string;
   pattern?: string;
+  patternHint?: PatternHint;
+  /** Where the timeline came from — "trace" means the user's own execution. */
+  source?: AnalyzeResult["source"];
 }
 
 interface CodeEditorProps {
   onScenarioGenerated: (scenario: Scenario, meta?: VisualizeMeta) => void;
+  /** 1-based source line of the step being shown, highlighted in the gutter. */
+  activeLine?: number;
+  /**
+   * The other lines this beat ran through. Marked faintly so the fold is
+   * visible — the beat is one move, but it was more than one line.
+   */
+  coveredLines?: number[];
 }
 
-type LoadStage = "idle" | "tracing" | "asking_ai";
+type LoadStage = "idle" | "tracing" | "loading_python" | "asking_ai";
 
-export function CodeEditor({ onScenarioGenerated }: CodeEditorProps) {
+export function CodeEditor({ onScenarioGenerated, activeLine, coveredLines }: CodeEditorProps) {
   const [code, setCode] = useState<string>(CODE_SAMPLES[0].code);
   const [language, setLanguage] = useState<string>(CODE_SAMPLES[0].language);
   const [stage, setStage] = useState<LoadStage>("idle");
@@ -39,6 +51,7 @@ export function CodeEditor({ onScenarioGenerated }: CodeEditorProps) {
   const [lastElapsed, setLastElapsed] = useState<number | null>(null);
   const [testCase, setTestCase] = useState("");
   const [mounted, setMounted] = useState(false);
+  const gutterRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setMounted(true), []);
 
@@ -58,6 +71,8 @@ export function CodeEditor({ onScenarioGenerated }: CodeEditorProps) {
 
     try {
       const result = await analyzeLocally(code, language, {
+        enablePythonTrace: true,
+        onPythonLoadStart: () => setStage("loading_python"),
         onAIPlanStart: () => setStage("asking_ai"),
         testCase: testCase.trim() || undefined,
       });
@@ -72,6 +87,8 @@ export function CodeEditor({ onScenarioGenerated }: CodeEditorProps) {
         traceSteps: result.traceSteps,
         warning: result.warning,
         pattern: result.pattern,
+        patternHint: result.patternHint,
+        source: result.source,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -104,6 +121,8 @@ export function CodeEditor({ onScenarioGenerated }: CodeEditorProps) {
         traceSteps: result.traceSteps,
         warning: result.warning,
         pattern: result.pattern,
+        patternHint: result.patternHint,
+        source: result.source,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "AI template fetch failed");
@@ -135,43 +154,43 @@ export function CodeEditor({ onScenarioGenerated }: CodeEditorProps) {
   return (
     <aside
       className="flex flex-col h-full shrink-0 w-[min(420px,38vw)] min-w-[280px]"
-      style={{ background: "#252526", borderRight: "1px solid #3c3c3c" }}
+      style={{ background: "var(--mac-sidebar)", borderRight: "1px solid var(--mac-separator)" }}
     >
       {/* Explorer header */}
       <div
-        className="h-[35px] shrink-0 flex items-center px-4 text-[11px] font-semibold uppercase tracking-wide text-[#bbbbbb]"
-        style={{ borderBottom: "1px solid #3c3c3c" }}
+        className="h-[35px] shrink-0 flex items-center px-4 text-[11px] font-semibold uppercase tracking-wide text-[var(--mac-text-2)]"
+        style={{ borderBottom: "1px solid var(--mac-separator)" }}
       >
         Explorer
       </div>
 
       {/* File tree stub */}
-      <div className="px-2 py-1 text-[13px]" style={{ borderBottom: "1px solid #3c3c3c" }}>
-        <div className="flex items-center gap-1.5 px-2 py-1 text-[#cccccc]">
+      <div className="px-2 py-1 text-[13px]" style={{ borderBottom: "1px solid var(--mac-separator)" }}>
+        <div className="flex items-center gap-1.5 px-2 py-1 text-[var(--mac-text)]">
           <ChevronDown />
           <span className="font-code text-[12px]">src</span>
         </div>
         <div
           className="flex items-center gap-1.5 pl-6 pr-2 py-1 ml-1 rounded-sm"
-          style={{ background: "#37373d" }}
+          style={{ background: "var(--mac-accent)" }}
         >
           <FileIcon ext={LANG_EXT[language]} />
-          <span className="font-code text-[12px] text-white">{fileName}</span>
+          <span className="font-code text-[12px] text-[var(--mac-accent-ink)]">{fileName}</span>
         </div>
       </div>
 
       {/* Editor tab bar */}
       <div
         className="h-[35px] shrink-0 flex items-end overflow-hidden"
-        style={{ background: "#2d2d2d", borderBottom: "1px solid #252526" }}
+        style={{ background: "var(--mac-inset)", borderBottom: "1px solid var(--mac-sidebar)" }}
       >
         <div
-          className="h-full flex items-center gap-2 px-3 text-[13px] text-[#ffffff] font-code"
-          style={{ background: "#1e1e1e", borderRight: "1px solid #252526", borderTop: "1px solid #007acc" }}
+          className="h-full flex items-center gap-2 px-3 text-[13px] text-[var(--mac-text)] font-code"
+          style={{ background: "var(--mac-content)", borderRight: "1px solid var(--mac-sidebar)", borderTop: "1px solid var(--mac-accent)" }}
         >
           <FileIcon ext={LANG_EXT[language]} small />
           {fileName}
-          <button type="button" className="text-[#858585] hover:text-white text-[10px] ml-1" aria-label="Close tab">
+          <button type="button" className="text-[var(--mac-text-2)] hover:text-[var(--mac-text)] text-[10px] ml-1" aria-label="Close tab">
             ×
           </button>
         </div>
@@ -180,27 +199,29 @@ export function CodeEditor({ onScenarioGenerated }: CodeEditorProps) {
       {/* Toolbar */}
       <div
         className="shrink-0 flex items-center gap-2 px-3 py-1.5 flex-wrap"
-        style={{ background: "#1e1e1e", borderBottom: "1px solid #3c3c3c" }}
+        style={{ background: "var(--mac-content)", borderBottom: "1px solid var(--mac-separator)" }}
       >
         <button
           type="button"
           onClick={handleVisualize}
           disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-1 text-[12px] text-white rounded-sm disabled:opacity-50"
-          style={{ background: "#0e639c" }}
-          onMouseEnter={(e) => !loading && (e.currentTarget.style.background = "#1177bb")}
-          onMouseLeave={(e) => (e.currentTarget.style.background = "#0e639c")}
+          className="mac-btn mac-btn-primary"
         >
           {loading ? <Spinner /> : <PlayRunIcon />}
-          {stage === "asking_ai" ? "Asking AI…" : stage === "tracing" ? "Tracing…" : "Visualize"}
+          {stage === "asking_ai"
+            ? "Asking AI…"
+            : stage === "loading_python"
+              ? "Loading Python…"
+              : stage === "tracing"
+                ? "Tracing…"
+                : "Visualize"}
         </button>
 
         <button
           type="button"
           onClick={handleGenerateAITemplates}
           disabled={aiLoading || loading}
-          className="text-[11px] font-code px-2 py-1 rounded-sm text-[#cccccc] disabled:opacity-50"
-          style={{ background: "#3c3c3c", border: "1px solid #3c3c3c" }}
+          className="mac-btn"
           title="Optional: fetch explanation templates from Gemini (cached)"
         >
           {aiLoading ? "AI…" : "AI Templates"}
@@ -209,8 +230,7 @@ export function CodeEditor({ onScenarioGenerated }: CodeEditorProps) {
         <select
           value=""
           onChange={(e) => e.target.value && loadSample(e.target.value)}
-          className="text-[11px] font-code px-2 py-1 rounded-sm text-[#cccccc]"
-          style={{ background: "#3c3c3c", border: "1px solid #3c3c3c" }}
+          className="mac-field mac-select"
           aria-label="Load sample"
         >
           <option value="">Samples…</option>
@@ -222,8 +242,7 @@ export function CodeEditor({ onScenarioGenerated }: CodeEditorProps) {
         <select
           value=""
           onChange={(e) => e.target.value && loadDemo(e.target.value)}
-          className="text-[11px] font-code px-2 py-1 rounded-sm text-[#cccccc]"
-          style={{ background: "#3c3c3c", border: "1px solid #3c3c3c" }}
+          className="mac-field mac-select"
           aria-label="Load demo"
         >
           <option value="">Demos…</option>
@@ -235,8 +254,7 @@ export function CodeEditor({ onScenarioGenerated }: CodeEditorProps) {
         <select
           value={language}
           onChange={(e) => setLanguage(e.target.value)}
-          className="text-[11px] font-code px-2 py-1 rounded-sm text-[#cccccc]"
-          style={{ background: "#3c3c3c", border: "1px solid #3c3c3c" }}
+          className="mac-field mac-select"
           aria-label="Language"
         >
           <option value="python">Python</option>
@@ -246,9 +264,9 @@ export function CodeEditor({ onScenarioGenerated }: CodeEditorProps) {
           <option value="typescript">TypeScript</option>
         </select>
 
-        <span className="text-[10px] font-code text-[#858585] ml-auto">
+        <span className="text-[10px] font-code text-[var(--mac-text-2)] ml-auto">
           {lastElapsed !== null && (
-            <span className="text-[#4ec9b0] mr-2">{lastElapsed}ms</span>
+            <span className="text-[var(--mac-good)] mr-2">{lastElapsed}ms</span>
           )}
           {code.length.toLocaleString()} chars
         </span>
@@ -257,9 +275,9 @@ export function CodeEditor({ onScenarioGenerated }: CodeEditorProps) {
       {/* Test case input */}
       <div
         className="shrink-0 flex items-center gap-2 px-3 py-2"
-        style={{ background: "#252526", borderBottom: "1px solid #3c3c3c" }}
+        style={{ background: "var(--mac-sidebar)", borderBottom: "1px solid var(--mac-separator)" }}
       >
-        <label htmlFor="test-case-input" className="text-[10px] font-code uppercase tracking-wider text-[#858585] shrink-0">
+        <label htmlFor="test-case-input" className="text-[10px] font-code uppercase tracking-wider text-[var(--mac-text-2)] shrink-0">
           Test case
         </label>
         <input
@@ -268,31 +286,62 @@ export function CodeEditor({ onScenarioGenerated }: CodeEditorProps) {
           value={testCase}
           onChange={(e) => setTestCase(e.target.value)}
           placeholder="optional — [1,2,3,4], k=2  or  list=[3,2,0,-4], pos=1"
-          className="flex-1 min-w-0 font-code text-[12px] text-[#d4d4d4] bg-[#1e1e1e] border border-[#3c3c3c] rounded-sm px-2 py-1 outline-none focus:border-[#007acc]"
+          className="mac-field flex-1 min-w-0 font-code"
           spellCheck={false}
         />
       </div>
 
       {/* Editor body */}
-      <div className="flex-1 min-h-0 flex overflow-hidden" style={{ background: "#1e1e1e" }}>
+      <div className="flex-1 min-h-0 flex overflow-hidden" style={{ background: "var(--mac-content)" }}>
         <div
+          ref={gutterRef}
           className="shrink-0 py-3 pr-2 text-right font-code text-[13px] leading-[20px] select-none overflow-hidden"
-          style={{ color: "#858585", width: 48, borderRight: "1px solid #3c3c3c" }}
+          style={{ color: "var(--mac-text-2)", width: 48, borderRight: "1px solid var(--mac-separator)" }}
           aria-hidden
         >
           {mounted &&
-            lines.map((_, i) => (
-              <div key={i}>{i + 1}</div>
-            ))}
+            lines.map((_, i) => {
+              const isActive = activeLine === i + 1;
+              const isCovered = !isActive && coveredLines?.includes(i + 1);
+              return (
+                <div
+                  key={i}
+                  style={
+                    isActive
+                      ? { color: "var(--mac-content)", background: "var(--mac-warn)", fontWeight: 600 }
+                      : isCovered
+                        ? {
+                            color: "var(--mac-warn)",
+                            // `var(--x)22` is not a colour — the alpha has to be
+                            // mixed in, not concatenated onto the token.
+                            background: "color-mix(in srgb, var(--mac-warn) 16%, transparent)",
+                          }
+                        : undefined
+                  }
+                >
+                  {i + 1}
+                </div>
+              );
+            })}
         </div>
 
         <textarea
           value={code}
           onChange={(e) => setCode(e.target.value)}
+          onScroll={(e) => {
+            // The gutter is a separate element, so it has to follow the
+            // textarea or the highlighted number drifts off its line.
+            if (gutterRef.current) {
+              gutterRef.current.scrollTop = e.currentTarget.scrollTop;
+            }
+          }}
           spellCheck={false}
-          className="flex-1 w-full h-full resize-none font-code text-[13px] leading-[20px] text-[#d4d4d4] bg-transparent px-3 py-3 outline-none"
+          wrap="off"
+          className="flex-1 w-full h-full resize-none font-code text-[13px] leading-[20px] text-[var(--mac-text)] bg-transparent px-3 py-3 outline-none"
           placeholder="// Paste your algorithm here…"
-          style={{ tabSize: 2 }}
+          // `pre` keeps one source line on one visual row; without it a wrapped
+          // line pushes the code out of step with the gutter numbering.
+          style={{ tabSize: 2, whiteSpace: "pre", overflowX: "auto" }}
         />
       </div>
 
@@ -303,7 +352,7 @@ export function CodeEditor({ onScenarioGenerated }: CodeEditorProps) {
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             className="shrink-0 px-3 py-2 text-[11px] font-code"
-            style={{ background: "#3a3a1e", borderTop: "1px solid #3c3c3c", color: "#dcdcaa" }}
+            style={{ background: "#3a3a1e", borderTop: "1px solid var(--mac-separator)", color: "var(--mac-warn)" }}
           >
             {warning}
           </motion.div>
@@ -314,14 +363,14 @@ export function CodeEditor({ onScenarioGenerated }: CodeEditorProps) {
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             className="shrink-0 overflow-hidden flex flex-col"
-            style={{ background: "#5a1d1d", borderTop: "1px solid #3c3c3c", maxHeight: "40%" }}
+            style={{ background: "#5a1d1d", borderTop: "1px solid var(--mac-separator)", maxHeight: "40%" }}
           >
-            <div className="px-3 py-2 text-[12px] font-code text-[#f48771] flex items-start justify-between gap-2">
+            <div className="px-3 py-2 text-[12px] font-code text-[var(--mac-bad)] flex items-start justify-between gap-2">
               <span className="flex-1 break-words">{error}</span>
               <button
                 type="button"
                 onClick={() => setError(null)}
-                className="text-[#f48771] hover:text-white text-[14px] leading-none shrink-0"
+                className="text-[var(--mac-bad)] hover:text-[var(--mac-text)] text-[14px] leading-none shrink-0"
                 aria-label="Dismiss"
               >
                 ×
@@ -336,7 +385,7 @@ export function CodeEditor({ onScenarioGenerated }: CodeEditorProps) {
 
 function ChevronDown() {
   return (
-    <svg width="10" height="10" viewBox="0 0 10 10" fill="#cccccc">
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="var(--mac-text)">
       <path d="M2 3l3 3 3-3" stroke="currentColor" fill="none" strokeWidth="1.2" />
     </svg>
   );

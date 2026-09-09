@@ -1,7 +1,17 @@
+import type { TraceKind } from "./instrumentCode";
+
 export interface TraceStep {
   line: number;
   vars: Record<string, unknown>;
   ts?: number;
+  /** Why this step was recorded — drives narration. */
+  kind?: TraceKind;
+  /** For `loop`/`condition` steps: how the condition evaluated. */
+  condResult?: boolean;
+  /** For `loop`/`condition` steps: the condition's source text. */
+  condLabel?: string;
+  /** For `return` steps: the value the expression actually evaluated to. */
+  returnValue?: unknown;
 }
 
 export interface SandboxResult {
@@ -132,7 +142,11 @@ export function detectFunctionName(code: string): string | null {
   return null;
 }
 
-export function extractEntryCall(code: string, fnName?: string | null): string | null {
+export function extractEntryCall(
+  code: string,
+  fnName?: string | null,
+  testCase?: string
+): string | null {
   const commentPatterns = [
     /#\s*(?:Example|Test|Call):\s*(.+)/i,
     /\/\/\s*(?:Example|Test|Call):\s*(.+)/i,
@@ -145,6 +159,15 @@ export function extractEntryCall(code: string, fnName?: string | null): string |
       const call = m[1].trim().replace(/;?\s*$/, "");
       if (call.length > 0) return call;
     }
+  }
+
+  // A pasted test case is the reader stating the arguments directly, so it
+  // outranks anything guessed from the source: "[[1,2],[3]]" is one grid,
+  // "[1,2,3], 5" two positionals. Named forms like "nums=[1]" are left to the
+  // patterns below, since JavaScript has no keyword arguments.
+  const pasted = testCase?.trim();
+  if (fnName && pasted && !/^\s*\w+\s*=[^=]/.test(pasted)) {
+    return `${fnName}(${pasted})`;
   }
 
   const inlineExample = code.match(/(?:nums|arr)\s*=\s*\[[^\]]+\].*target\s*=\s*\d+/i);
@@ -198,18 +221,57 @@ export function runSandbox(
 
   const expired = () => Date.now() - startedAt > timeoutMs;
 
-  const traceFn = (line: number, vars: Record<string, unknown>) => {
+  const record = (step: TraceStep) => {
     if (++stepCount > maxSteps) {
       throw new Error(`${STEP_LIMIT_MARKER}: exceeded ${maxSteps} trace steps`);
     }
     if (expired()) {
       throw new Error(`${TIMEOUT_MARKER}: exceeded ${timeoutMs}ms`);
     }
-    traceHistory.push({
+    traceHistory.push(step);
+  };
+
+  const traceFn = (line: number, vars: Record<string, unknown>, kind?: TraceKind) => {
+    record({ line, vars: cloneSnapshot(vars), ts: Date.now(), kind });
+  };
+
+  /**
+   * Records a condition evaluation and hands back the value untouched, so
+   * wrapping a condition never alters control flow.
+   */
+  const condFn = <T>(
+    line: number,
+    vars: Record<string, unknown>,
+    value: T,
+    label: string,
+    kind: TraceKind
+  ): T => {
+    record({
       line,
       vars: cloneSnapshot(vars),
       ts: Date.now(),
+      kind,
+      condResult: Boolean(value),
+      condLabel: label,
     });
+    return value;
+  };
+
+  /**
+   * Attach a returned value to the `return` step recorded just before it.
+   * Deliberately does not consume step budget — it annotates an existing step
+   * rather than adding one.
+   */
+  const retFn = <T>(value: T): T => {
+    const last = traceHistory[traceHistory.length - 1];
+    if (last && last.kind === "return") {
+      try {
+        last.returnValue = snapshotValue(value, new Set(), 0);
+      } catch {
+        /* leave the step unannotated rather than failing the run */
+      }
+    }
+    return value;
   };
 
   const guardFn = () => {
@@ -223,18 +285,29 @@ export function runSandbox(
   };
 
   const preamble = `
-    function __trace__(line, vars) { return __sandboxTrace__(line, vars); }
+    function __trace__(line, vars, kind) { return __sandboxTrace__(line, vars, kind); }
     function __guard__() { return __sandboxGuard__(); }
+    function __cond__(line, vars, value, label, kind) {
+      return __sandboxCond__(line, vars, value, label, kind);
+    }
+    function __ret__(value) { return __sandboxRet__(value); }
   `;
 
   try {
     const fn = new Function(
       "__sandboxTrace__",
       "__sandboxGuard__",
+      "__sandboxCond__",
+      "__sandboxRet__",
       `"use strict";\n${preamble}\n${instrumentedCode}\nreturn ${entryCall};`
-    ) as (trace: typeof traceFn, guard: typeof guardFn) => unknown;
+    ) as (
+      trace: typeof traceFn,
+      guard: typeof guardFn,
+      cond: typeof condFn,
+      ret: typeof retFn
+    ) => unknown;
 
-    const returnValue = fn(traceFn, guardFn);
+    const returnValue = fn(traceFn, guardFn, condFn, retFn);
 
     return { traceHistory, returnValue };
   } catch (err) {

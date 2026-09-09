@@ -26,6 +26,16 @@ function formatValue(v: VariableValue): string {
     const text = `[${inner}]`;
     return text.length > 60 ? text.slice(0, 57) + "…]" : text;
   }
+  if (typeof v === "object") {
+    // Without this a dict fell through to String(v) and read "[object Object]".
+    const entries = Object.entries(v);
+    if (entries.length === 0) return "{}";
+    const inner = entries
+      .map(([k, val]) => `${k}: ${typeof val === "string" ? `"${val}"` : String(val)}`)
+      .join(", ");
+    const text = `{${inner}}`;
+    return text.length > 60 ? text.slice(0, 57) + "…}" : text;
+  }
   return String(v);
 }
 
@@ -43,9 +53,9 @@ export function VariablesPanel({ frame, prevFrame }: VariablesPanelProps) {
   return (
     <div
       className="flex flex-wrap gap-2 mb-4 px-3 py-2 rounded"
-      style={{ background: "#252526", border: "1px solid #3c3c3c" }}
+      style={{ background: "var(--mac-sidebar)", border: "1px solid var(--mac-separator)" }}
     >
-      <span className="text-[10px] font-code uppercase tracking-wider text-[#858585] self-center mr-1">
+      <span className="text-[10px] font-code uppercase tracking-wider text-[var(--mac-text-2)] self-center mr-1">
         Watch
       </span>
       <AnimatePresence mode="popLayout">
@@ -59,20 +69,20 @@ export function VariablesPanel({ frame, prevFrame }: VariablesPanelProps) {
               animate={{
                 opacity: 1,
                 scale: 1,
-                background: changed ? "#264f78" : "#1e1e1e",
+                background: changed ? "var(--mac-accent-soft)" : "var(--mac-content)",
               }}
               transition={{ duration: 0.25 }}
               className="flex items-center gap-1.5 px-2 py-1 rounded font-code text-[12px]"
-              style={{ border: "1px solid #3c3c3c" }}
+              style={{ border: "1px solid var(--mac-separator)" }}
             >
-              <span style={{ color: changed ? "#9cdcfe" : "#858585" }}>{name}</span>
-              <span style={{ color: "#858585" }}>=</span>
+              <span style={{ color: changed ? "var(--mac-accent)" : "var(--mac-text-2)" }}>{name}</span>
+              <span style={{ color: "var(--mac-text-2)" }}>=</span>
               <motion.span
                 key={JSON.stringify(value)}
                 initial={changed ? { y: -4, opacity: 0 } : false}
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ type: "spring", stiffness: 300, damping: 24 }}
-                style={{ color: changed ? "#dcdcaa" : "#d4d4d4" }}
+                style={{ color: changed ? "var(--mac-warn)" : "var(--mac-text)" }}
               >
                 {formatValue(value)}
               </motion.span>

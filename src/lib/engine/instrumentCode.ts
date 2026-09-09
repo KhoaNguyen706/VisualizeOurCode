@@ -1,7 +1,15 @@
+/**
+ * Why a step was recorded. Narration reads this to describe the line in the
+ * author's own terms instead of falling back to canned pattern prose.
+ */
+export type TraceKind = "mutation" | "return" | "loop" | "condition";
+
 export interface InstrumentResult {
   code: string;
   tracePoints: number[];
   variableNames: string[];
+  /** Kinds recorded at each traced line, in injection order. */
+  traceKinds: Array<{ line: number; kind: TraceKind }>;
 }
 
 /**
@@ -27,6 +35,48 @@ const INCDEC_RE = /^\s*(?:\+\+|--)?([\w$]+)(?:\+\+|--)\s*;?\s*$/;
 /** `res.push(x)`, `seen.set(k, v)` — mutating method calls change state too. */
 const METHOD_MUTATE_RE =
   /^\s*([\w$]+)\s*\.\s*(?:push|pop|shift|unshift|splice|set|add|delete|clear|sort|reverse|fill|copyWithin)\s*\(/;
+
+/** `for (const x of xs)` / `for (const k in obj)` — bounded, no condition clause. */
+const FOR_ITER_RE = /^\s*for\s*\(\s*(?:const|let|var)\s+[^;)]+\s+(?:of|in)\s+/;
+
+/** `return <expr>;` split into keyword, expression, and trailing punctuation. */
+const RETURN_EXPR_RE = /^(\s*return\s+)(.+?)(;\s*)$/;
+
+/** Brackets balance outside of string literals — safe to wrap as one expression. */
+function isBalanced(src: string): boolean {
+  const stack: string[] = [];
+  const pairs: Record<string, string> = { ")": "(", "]": "[", "}": "{" };
+  let quote: string | null = null;
+
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (quote) {
+      if (ch === "\\") i++;
+      else if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") quote = ch;
+    else if ("([{".includes(ch)) stack.push(ch);
+    else if (ch in pairs) {
+      if (stack.pop() !== pairs[ch]) return false;
+    }
+  }
+  return stack.length === 0 && quote === null;
+}
+
+/**
+ * `return expr;` -> `return __ret__(expr);` so the trace records what the code
+ * actually produced. The preceding `__trace__` fires before the expression is
+ * evaluated, so without this the final frame can only echo the source text.
+ *
+ * Left alone unless the expression is complete on this line: a `return {` that
+ * opens a multi-line object would otherwise be wrapped into a syntax error.
+ */
+export function wrapReturnValue(line: string): string {
+  const m = line.match(RETURN_EXPR_RE);
+  if (!m || !isBalanced(m[2])) return line;
+  return `${m[1]}__ret__(${m[2]})${m[3]}`;
+}
 
 /** A control-flow header with no `{` owns exactly the next statement. */
 const BRACELESS_HEADER_RE = /^\s*(?:if|else\s+if|for|while)\s*\(.*\)\s*$/;
@@ -156,6 +206,38 @@ function findLoopKeyword(src: string): { index: number; openIdx: number; keyword
 }
 
 /**
+ * A condition whose value is fixed in the source (`while (true)`) tells no
+ * story: "check true -> true" on every iteration is noise, and recording it
+ * would let the step budget pre-empt the loop budget that exists to stop
+ * exactly these loops.
+ */
+const TRIVIAL_COND_RE = /^(?:true|false|-?\d+(?:\.\d+)?)$/;
+
+/** Where to record a condition evaluation, and what to snapshot when it fires. */
+export interface CondTraceContext {
+  lineNum: number;
+  snapshotExpr: string;
+}
+
+/**
+ * `__cond__(line, vars, value, label, kind)` records the evaluation and returns
+ * `value`, so wrapping a condition never changes control flow.
+ */
+function traceCond(cond: string, kind: TraceKind, ctx: CondTraceContext): string {
+  return (
+    `__cond__(${ctx.lineNum}, ${ctx.snapshotExpr}, (${cond}), ` +
+    `${JSON.stringify(cond)}, ${JSON.stringify(kind)})`
+  );
+}
+
+/** The guarded — and, when it carries information, traced — loop condition. */
+function guardExpr(cond: string, ctx?: CondTraceContext): string {
+  if (!cond) return "__guard__() ";
+  if (!ctx || TRIVIAL_COND_RE.test(cond)) return `__guard__() && (${cond})`;
+  return `__guard__() && ${traceCond(cond, "loop", ctx)}`;
+}
+
+/**
  * Rewrite loop conditions to call `__guard__()` first:
  *
  *   while (cond)          -> while (__guard__() && (cond))
@@ -166,8 +248,12 @@ function findLoopKeyword(src: string): { index: number; openIdx: number; keyword
  * covers brace-less loops, and `do {...} while (cond)` is picked up by the
  * same `while` rewrite. `for...of` / `for...in` are skipped: they are bounded
  * by their iterable and have no condition clause to hook.
+ *
+ * With `ctx`, the condition is additionally wrapped in `__cond__` so every
+ * iteration is recorded — that per-iteration step is what makes a loop-driven
+ * algorithm legible without a canned template.
  */
-export function injectLoopGuards(line: string): string {
+export function injectLoopGuards(line: string, ctx?: CondTraceContext): string {
   let out = "";
   let rest = line;
 
@@ -190,7 +276,7 @@ export function injectLoopGuards(line: string): string {
 
     let rewritten: string;
     if (found.keyword === "while") {
-      rewritten = `__guard__() && (${inner})`;
+      rewritten = guardExpr(inner.trim(), ctx);
     } else {
       const parts = splitTopLevel(inner);
       if (parts.length !== 3) {
@@ -199,14 +285,39 @@ export function injectLoopGuards(line: string): string {
         rest = rest.slice(closeIdx + 1);
         continue;
       }
-      const cond = parts[1].trim();
-      parts[1] = cond ? ` __guard__() && (${cond})` : " __guard__() ";
+      parts[1] = ` ${guardExpr(parts[1].trim(), ctx)}`;
       rewritten = parts.join(";");
     }
 
     out += head + rewritten + ")";
     rest = rest.slice(closeIdx + 1);
   }
+}
+
+/** `if (cond)` / `} else if (cond)` at the head of a line. */
+const IF_HEAD_RE = /^(\s*(?:\}\s*)?(?:else\s+)?if\s*)\(/;
+
+/**
+ * Wrap an `if` / `else if` condition in `__cond__` so the branch decision
+ * itself becomes a step: the author sees *why* execution went the way it did,
+ * which is the part a mutation-only trace can never show.
+ */
+export function injectConditionTrace(line: string, ctx: CondTraceContext): string {
+  const head = line.match(IF_HEAD_RE);
+  if (!head) return line;
+
+  const openIdx = head[0].length - 1;
+  const closeIdx = findMatchingParen(line, openIdx);
+  if (closeIdx === -1) return line;
+
+  const cond = line.slice(openIdx + 1, closeIdx).trim();
+  if (!cond || TRIVIAL_COND_RE.test(cond)) return line;
+
+  return (
+    line.slice(0, openIdx + 1) +
+    traceCond(cond, "condition", ctx) +
+    line.slice(closeIdx)
+  );
 }
 
 function addParams(raw: string, names: Set<string>): void {
@@ -311,10 +422,16 @@ export function instrumentCode(rawCode: string): InstrumentResult {
   const varNames = collectDeclaredNames(rawCode);
   const snapshotExpr = buildSnapshotExpr(varNames);
   const tracePoints: number[] = [];
+  const traceKinds: Array<{ line: number; kind: TraceKind }> = [];
   const output: string[] = [];
 
-  const traceStmt = (lineNum: number, indent: string) =>
-    `${indent}__trace__(${lineNum}, ${snapshotExpr});`;
+  const traceStmt = (lineNum: number, indent: string, kind: TraceKind) =>
+    `${indent}__trace__(${lineNum}, ${snapshotExpr}, ${JSON.stringify(kind)});`;
+
+  const record = (lineNum: number, kind: TraceKind) => {
+    tracePoints.push(lineNum);
+    traceKinds.push({ line: lineNum, kind });
+  };
 
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i];
@@ -327,7 +444,22 @@ export function instrumentCode(rawCode: string): InstrumentResult {
       continue;
     }
 
-    const line = injectLoopGuards(rawLine);
+    const ctx: CondTraceContext = { lineNum, snapshotExpr };
+    let line = injectLoopGuards(rawLine, ctx);
+    if (line.includes(`__cond__(${lineNum},`)) record(lineNum, "loop");
+
+    const beforeIf = line;
+    line = injectConditionTrace(line, ctx);
+    if (line !== beforeIf) record(lineNum, "condition");
+
+    // for...of / for...in have no condition clause to hook, so the iteration
+    // step goes at the top of the body instead.
+    if (FOR_ITER_RE.test(trimmed) && trimmed.endsWith("{")) {
+      output.push(line, traceStmt(lineNum, `${indent}  `, "loop"));
+      record(lineNum, "loop");
+      continue;
+    }
+
     const isReturn = RETURN_RE.test(rawLine);
     const mutated = isReturn ? null : mutatedVariable(trimmed);
 
@@ -344,21 +476,23 @@ export function instrumentCode(rawCode: string): InstrumentResult {
       !prev.endsWith("{") &&
       (BRACELESS_HEADER_RE.test(prev) || BRACELESS_ELSE_RE.test(prev));
 
+    const kind: TraceKind = isReturn ? "return" : "mutation";
     const body = isReturn
-      ? [traceStmt(lineNum, indent), line]
-      : [line, traceStmt(lineNum, indent)];
+      ? [traceStmt(lineNum, indent, kind), wrapReturnValue(line)]
+      : [line, traceStmt(lineNum, indent, kind)];
 
     if (needsBlock) {
       output.push(`${indent}{`, ...body, `${indent}}`);
     } else {
       output.push(...body);
     }
-    tracePoints.push(lineNum);
+    record(lineNum, kind);
   }
 
   return {
     code: output.join("\n"),
     tracePoints,
     variableNames: varNames,
+    traceKinds,
   };
 }

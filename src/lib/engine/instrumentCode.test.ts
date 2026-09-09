@@ -94,9 +94,16 @@ describe("instrumentCode", () => {
     expect(tracePoints).toContain(2);
   });
 
-  it("injects a trace before a return", () => {
+  it("injects a trace before a return and captures the returned value", () => {
     const { code } = instrumentCode("function f() {\n  return 42;\n}");
-    expect(code).toMatch(/__trace__\(2,[^\n]*\);\n\s*return 42;/);
+    expect(code).toMatch(/__trace__\(2,[^\n]*\);\n\s*return __ret__\(42\);/);
+  });
+
+  it("leaves an incomplete return expression unwrapped", () => {
+    // `return {` opens a multi-line object; wrapping it here is a syntax error.
+    const { code } = instrumentCode("function f() {\n  return {\n    a: 1\n  };\n}");
+    expect(code).not.toContain("__ret__");
+    expect(code).toContain("return {");
   });
 
   it("traces mutating method calls", () => {
@@ -113,8 +120,40 @@ describe("instrumentCode", () => {
   });
 
   it("does not treat equality comparisons as assignments", () => {
-    const { tracePoints } = instrumentCode("function f(a, b) {\n  if (a === b) {}\n}");
-    expect(tracePoints).not.toContain(2);
+    // `if (a === b)` is worth a step — but as the branch decision it is, not
+    // as a write to `a`.
+    const { traceKinds } = instrumentCode("function f(a, b) {\n  if (a === b) {}\n}");
+    expect(traceKinds).toEqual([{ line: 2, kind: "condition" }]);
+  });
+
+  it("records each loop iteration so loop-driven code has a story", () => {
+    // Regression: a brute-force nested loop used to trace only its `return`,
+    // leaving nothing to visualise and forcing a canned pattern template.
+    const { traceKinds } = instrumentCode(
+      "function f(nums) {\n  for (let i = 0; i < nums.length; i++) {\n    if (nums[i] === 1) {\n      return i;\n    }\n  }\n  return -1;\n}"
+    );
+    expect(traceKinds).toEqual([
+      { line: 2, kind: "loop" },
+      { line: 3, kind: "condition" },
+      { line: 4, kind: "return" },
+      { line: 7, kind: "return" },
+    ]);
+  });
+
+  it("traces for...of iterations at the top of the body", () => {
+    const { code, traceKinds } = instrumentCode(
+      "function f(items) {\n  for (const x of items) {\n    total += x;\n  }\n}"
+    );
+    expect(traceKinds).toContainEqual({ line: 2, kind: "loop" });
+    expect(code).toMatch(/for \(const x of items\) \{\n\s*__trace__\(2,[^\n]*"loop"\);/);
+  });
+
+  it("leaves a constant loop condition untraced so the loop budget still governs", () => {
+    // `while (true)` records nothing per iteration, so only __guard__ can stop
+    // it — tracing "true => true" would let the step budget pre-empt that.
+    const { code, traceKinds } = instrumentCode("function f() {\n  while (true) {\n  }\n}");
+    expect(traceKinds).toHaveLength(0);
+    expect(code).toContain("while (__guard__() && (true))");
   });
 
   it("wraps a brace-less loop body so the trace stays inside the loop", () => {

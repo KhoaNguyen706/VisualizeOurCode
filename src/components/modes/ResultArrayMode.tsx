@@ -18,7 +18,7 @@ export function ResultArrayMode({ frame }: ResultArrayModeProps) {
 
   return (
     <div className="w-full flex flex-col items-center gap-2">
-      <div className="text-[10px] font-code uppercase tracking-wider text-[#858585]">Result</div>
+      <div className="text-[10px] font-code uppercase tracking-wider text-[var(--mac-text-2)]">Result</div>
       <div className="flex items-center justify-center flex-nowrap overflow-x-auto max-w-full min-h-[52px]" style={{ gap }}>
         <AnimatePresence mode="popLayout">
           {result.length === 0 ? (
@@ -26,7 +26,7 @@ export function ResultArrayMode({ frame }: ResultArrayModeProps) {
               key="empty"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="text-sm font-code text-[#858585] border border-dashed border-[#3c3c3c] px-4 py-2 rounded-lg"
+              className="text-sm font-code text-[var(--mac-text-2)] border border-dashed border-[var(--mac-separator)] px-4 py-2 rounded-lg"
             >
               [ ] empty
             </motion.span>
@@ -37,8 +37,8 @@ export function ResultArrayMode({ frame }: ResultArrayModeProps) {
                 layout
                 initial={{ opacity: 0, scale: 0.5 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="rounded-lg border-2 border-[#4ec9b0]/70 bg-[#4ec9b0]/10 flex items-center justify-center font-mono font-bold text-[#4ec9b0] shrink-0"
-                style={{ width: cellPx, height: cellPx, fontSize, boxShadow: "0 3px 0 #1e1e1e" }}
+                className="rounded-lg border-2 border-[var(--mac-good)]/70 bg-[var(--mac-good)]/10 flex items-center justify-center font-mono font-bold text-[var(--mac-good)] shrink-0"
+                style={{ width: cellPx, height: cellPx, fontSize, boxShadow: "0 3px 0 var(--mac-content)" }}
               >
                 {val}
               </motion.div>
