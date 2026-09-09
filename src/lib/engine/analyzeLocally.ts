@@ -17,7 +17,8 @@ import { parseTestCase } from "@/lib/dsa/parseTestCase";
 import { resolveLocalTracer } from "./resolveLocalTracer";
 import { shouldSkipGenericTracer } from "./shouldSkipGenericTracer";
 import { enrichScenarioTimeline } from "./technique/enrichTimeline";
-import { inferTechniqueFromCode } from "./technique/inferTechnique";
+import { inferTechniquesFromCode } from "./technique/inferTechnique";
+import type { VisualizationTechnique } from "./technique/types";
 
 export interface AnalyzeResult {
   scenario: Scenario;
@@ -29,6 +30,8 @@ export interface AnalyzeResult {
   warning?: string;
   /** Textbook approach for the detected problem shape, shown beside the trace. */
   patternHint?: PatternHint;
+  /** Every technique the code combines, primary first. */
+  techniques?: VisualizationTechnique[];
 }
 
 export interface AnalyzeError {
@@ -68,8 +71,9 @@ function finalizeResult(
   rawCode: string,
   start: number
 ): AnalyzeResult {
-  const technique = inferTechniqueFromCode(rawCode);
-  result.scenario = enrichScenarioTimeline(result.scenario, rawCode, technique);
+  const techniques = inferTechniquesFromCode(rawCode);
+  result.scenario = enrichScenarioTimeline(result.scenario, rawCode, techniques);
+  result.techniques = techniques;
   result.traceSteps = result.scenario.timeline.length;
   result.elapsedMs = Math.round(performance.now() - start);
   return result;

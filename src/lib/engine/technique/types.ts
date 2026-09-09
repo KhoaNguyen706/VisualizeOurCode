@@ -7,6 +7,7 @@ export type VisualizationTechnique =
   | "bfs"
   | "graph"
   | "backtrack"
+  | "recursion"
   | "hash_map"
   | "hash_set"
   | "linked_list"
@@ -23,6 +24,7 @@ export const TECHNIQUE_LABELS: Record<VisualizationTechnique, string> = {
   bfs: "BFS",
   graph: "Graph",
   backtrack: "Backtracking",
+  recursion: "Recursion",
   hash_map: "Hash Map",
   hash_set: "Hash Set",
   linked_list: "Linked List",

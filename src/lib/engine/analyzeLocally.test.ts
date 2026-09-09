@@ -220,3 +220,50 @@ describe("analyzeLocally", () => {
     expect(result).toBeDefined();
   });
 });
+
+describe("analyzeLocally names the approaches it recognises", () => {
+  it("labels a BFS with a visited set as both and draws the queue", async () => {
+    const code = `function reach(graph, start) {
+  const visited = new Set([start]);
+  const order = [];
+  const queue = [start];
+  while (queue.length > 0) {
+    const node = queue.shift();
+    order.push(node);
+    for (const next of graph[node]) {
+      if (!visited.has(next)) {
+        visited.add(next);
+        queue.push(next);
+      }
+    }
+  }
+  return order;
+}
+// Example: reach({ a: ["b", "c"], b: ["d"], c: [], d: [] }, "a")`;
+    const result = expectSuccess(await analyzeLocally(code, "javascript"));
+    expect(result.source).toBe("trace");
+    expect(result.techniques).toEqual(["bfs", "graph", "hash_set"]);
+    const last = result.scenario.timeline[result.scenario.timeline.length - 1];
+    expect(last.technique).toBe("bfs");
+    expect(last.techniques).toEqual(["bfs", "graph", "hash_set"]);
+    expect(last.structures.containerData?.name).toBe("queue");
+  });
+
+  it("spells a string out as cells so pointers over it have somewhere to stand", async () => {
+    const code = `function isPal(s) {
+  let left = 0;
+  let right = s.length - 1;
+  while (left < right) {
+    if (s[left] !== s[right]) return false;
+    left++;
+    right--;
+  }
+  return true;
+}
+// Example: isPal("racecar")`;
+    const result = expectSuccess(await analyzeLocally(code, "javascript"));
+    expect(result.techniques?.[0]).toBe("two_pointer");
+    const drawn = result.scenario.timeline.find((f) => f.structures.arrayData.length > 0);
+    expect(drawn?.structures.arrayData).toEqual([..."racecar"]);
+  });
+});

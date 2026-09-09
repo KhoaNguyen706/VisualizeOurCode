@@ -25,6 +25,8 @@ export interface VisualizeMeta {
   patternHint?: PatternHint;
   /** Where the timeline came from — "trace" means the user's own execution. */
   source?: AnalyzeResult["source"];
+  /** Every technique the code combines, primary first. */
+  techniques?: AnalyzeResult["techniques"];
 }
 
 interface CodeEditorProps {
@@ -86,6 +88,7 @@ export function CodeEditor({ onScenarioGenerated, activeLine, coveredLines }: Co
         pattern: result.pattern,
         patternHint: result.patternHint,
         source: result.source,
+        techniques: result.techniques,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");

@@ -329,8 +329,24 @@ function pickArray(
     if (exclude?.has(k)) continue;
     if (scalarArray(v)) return v;
   }
+  // A string is the array in half of the string problems — two pointers over a
+  // palindrome, a window over a substring — so it is spelled out as characters
+  // to give the pointers cells to stand on. Only when there *are* indices,
+  // though: a `for ch in word` never moves a pointer, and drawing the word as
+  // a row that never changes would make the condenser fold the whole loop into
+  // one beat. Parameters snapshot first, so the input string wins over a
+  // one-character loop variable.
+  const indexed = INDEX_NAMES.some((k) => Number.isInteger(vars[k]));
+  if (!indexed) return null;
+  for (const [k, v] of Object.entries(vars)) {
+    if (exclude?.has(k)) continue;
+    if (typeof v === "string" && v.length >= 2 && v.length <= 80) return [...v];
+  }
   return null;
 }
+
+/** Names that read as a position in a sequence, per `inferHighlights`. */
+const INDEX_NAMES = ["i", "j", "k", "left", "right", "lo", "hi", "low", "high", "start", "end", "mid"];
 
 /** Conventional names, checked first so the common case keeps a stable order. */
 const PREFERRED_MAP_NAMES = ["seen", "map", "counts", "freq", "lookup", "cache", "memo"];

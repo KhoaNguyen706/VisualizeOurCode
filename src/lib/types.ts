@@ -90,6 +90,12 @@ export interface TimelineFrame {
   overlayModes?: VisualizationMode[];
   /** Drives technique-specific rendering (window box, grid, graph, etc.) */
   technique?: string;
+  /**
+   * Every technique the code combines, primary first — `technique` is the
+   * first of these. A BFS over a grid with a visited set is all three, and
+   * naming each lets the picture be read as the combination it is.
+   */
+  techniques?: string[];
   /** Condition check this step: true = met (green), false = not met (red) */
   conditionMet?: boolean;
   /** Short label for the condition, e.g. "num in set?" */
