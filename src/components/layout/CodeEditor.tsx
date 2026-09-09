@@ -2,11 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { CODE_SAMPLES } from "@/lib/gemini/samples";
+import { CODE_SAMPLES } from "@/lib/samples";
 import { analyzeLocally } from "@/lib/engine/analyzeLocally";
 import type { AnalyzeResult } from "@/lib/engine/analyzeLocally";
 import type { PatternHint } from "@/lib/engine/patternHint";
-import { fetchAITemplates } from "@/lib/gemini/templateCache";
 import { scenarios } from "@/lib/scenarios";
 import type { Scenario } from "@/lib/types";
 
@@ -39,13 +38,12 @@ interface CodeEditorProps {
   coveredLines?: number[];
 }
 
-type LoadStage = "idle" | "tracing" | "loading_python" | "asking_ai";
+type LoadStage = "idle" | "tracing" | "loading_python";
 
 export function CodeEditor({ onScenarioGenerated, activeLine, coveredLines }: CodeEditorProps) {
   const [code, setCode] = useState<string>(CODE_SAMPLES[0].code);
   const [language, setLanguage] = useState<string>(CODE_SAMPLES[0].language);
   const [stage, setStage] = useState<LoadStage>("idle");
-  const [aiLoading, setAiLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [lastElapsed, setLastElapsed] = useState<number | null>(null);
@@ -73,7 +71,6 @@ export function CodeEditor({ onScenarioGenerated, activeLine, coveredLines }: Co
       const result = await analyzeLocally(code, language, {
         enablePythonTrace: true,
         onPythonLoadStart: () => setStage("loading_python"),
-        onAIPlanStart: () => setStage("asking_ai"),
         testCase: testCase.trim() || undefined,
       });
       if ("error" in result) {
@@ -94,40 +91,6 @@ export function CodeEditor({ onScenarioGenerated, activeLine, coveredLines }: Co
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setStage("idle");
-    }
-  };
-
-  const handleGenerateAITemplates = async () => {
-    setAiLoading(true);
-    setError(null);
-    try {
-      const template = await fetchAITemplates(code, language);
-      if (!template) {
-        setError("AI template generation unavailable. Static templates are used automatically.");
-        return;
-      }
-      const result = await analyzeLocally(code, language, {
-        templateOverride: template,
-        testCase: testCase.trim() || undefined,
-      });
-      if ("error" in result) {
-        setError(result.error);
-        return;
-      }
-      setLastElapsed(result.elapsedMs);
-      if (result.warning) setWarning(result.warning);
-      onScenarioGenerated(result.scenario, {
-        elapsedMs: result.elapsedMs,
-        traceSteps: result.traceSteps,
-        warning: result.warning,
-        pattern: result.pattern,
-        patternHint: result.patternHint,
-        source: result.source,
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "AI template fetch failed");
-    } finally {
-      setAiLoading(false);
     }
   };
 
@@ -208,23 +171,11 @@ export function CodeEditor({ onScenarioGenerated, activeLine, coveredLines }: Co
           className="mac-btn mac-btn-primary"
         >
           {loading ? <Spinner /> : <PlayRunIcon />}
-          {stage === "asking_ai"
-            ? "Asking AI…"
-            : stage === "loading_python"
-              ? "Loading Python…"
-              : stage === "tracing"
-                ? "Tracing…"
-                : "Visualize"}
-        </button>
-
-        <button
-          type="button"
-          onClick={handleGenerateAITemplates}
-          disabled={aiLoading || loading}
-          className="mac-btn"
-          title="Optional: fetch explanation templates from Gemini (cached)"
-        >
-          {aiLoading ? "AI…" : "AI Templates"}
+          {stage === "loading_python"
+            ? "Loading Python…"
+            : stage === "tracing"
+              ? "Tracing…"
+              : "Visualize"}
         </button>
 
         <select

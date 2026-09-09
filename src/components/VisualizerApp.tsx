@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { createEmptyScenario } from "@/lib/gemini/validateTimeline";
 import { useTimelinePlayer } from "@/hooks/useTimelinePlayer";
 import type { Scenario } from "@/lib/types";
+import { createEmptyScenario } from "@/lib/scenarios";
 import { Header } from "@/components/layout/Header";
 import { CodeEditor } from "@/components/layout/CodeEditor";
 import { VisualizationCanvas } from "@/components/engine/VisualizationCanvas";

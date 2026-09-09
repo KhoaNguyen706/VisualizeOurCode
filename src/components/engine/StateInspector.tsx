@@ -74,7 +74,7 @@ export function StateInspector({ frame, currentIndex, scenario }: StateInspector
               <span className="font-code text-[12px] text-[var(--mac-warn)]">{scenario.spaceComplexity}</span>
             </div>
           )}
-          {scenario.name !== "AI Generated" && (
+          {scenario.name && (
             <div className="w-full text-[11px] font-code text-[var(--mac-good)] truncate">
               {scenario.name}
             </div>

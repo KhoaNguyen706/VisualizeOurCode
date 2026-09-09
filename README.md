@@ -1,6 +1,12 @@
 # VisualizeOurCode
 
-A zero-cost, client-side **LeetCode / DSA Visualizer** built with Next.js, React, Tailwind CSS, and Framer Motion.
+**Live: https://khoanguyen706.github.io/VisualizeOurCode/**
+
+Paste your own LeetCode / DSA solution and watch it run, step by step. Python and
+JavaScript execute for real in your browser — wrong answers included — and every
+step is narrated from your own source line and the values it actually produced.
+
+Free, no account, no API key, no AI. Everything runs on your machine.
 
 ## Features
 
@@ -9,7 +15,8 @@ A zero-cost, client-side **LeetCode / DSA Visualizer** built with Next.js, React
 - **Instant client-side tracing** — instrument JS/TS code, execute it, visualize in under 100ms
 - **Real Python, in the browser** — Python runs on actual CPython (Pyodide/WebAssembly)
   under `sys.settrace`, so the trace is your interpreter's, not an approximation
-- **6 Visualization Modes**: Array, Result Array, Hash Map, Linked List, Tree/Graph, Grid
+- **Visualization modes**: Array, Result Array, Hash Map, Linked List, Tree/Graph, Grid,
+  and the queue / stack / set a traversal drives itself from
 - **Step slider** — scrub through trace history with live variable watch panel, with
   the executing line highlighted in the editor gutter
 - **Pattern hints** — when your code resembles a known problem, the textbook approach
@@ -22,6 +29,8 @@ A zero-cost, client-side **LeetCode / DSA Visualizer** built with Next.js, React
 Code → instrumentCode() → runSandbox() → traceHistory[]
                                               ↓
                                       narrateTrace()   ← your source lines + real values
+                                              ↓
+                                      condenseTrace()  ← fold bookkeeping into beats
                                               ↓
                                        TimelineFrame[]
                                               ↓
@@ -79,7 +88,7 @@ brace-less bodies and the tail of a `do/while`.
 ## Testing
 
 ```bash
-npm test        # vitest, 70 tests over the engine
+npm test        # vitest over the engine
 npm run typecheck
 ```
 
@@ -128,22 +137,24 @@ If you see `Cannot find module './331.js'` or `a[d] is not a function`, the dev 
 npm run dev:clean
 ```
 
-Open [http://localhost:3000](http://localhost:3000). No API key required for the default flow.
+Open [http://localhost:3000](http://localhost:3000).
 
-### Optional: AI explanation templates
+## Deploying
 
-```bash
-cp .env.example .env.local
-# Add GEMINI_API_KEY=your_key_here
-```
+The app is a static site — there is no server, so it can be hosted anywhere that
+serves files. `next build` writes it to `out/`.
 
-Click **AI Templates** to fetch cached explanation templates from Gemini (~4KB JSON, not full timelines).
+The repository deploys itself to **GitHub Pages** on every push to `main`
+(`.github/workflows/deploy.yml`). A project site lives under `/<repo>/`, so the
+workflow builds with `NEXT_PUBLIC_BASE_PATH=/<repo>`; a local build without that
+variable serves from `/`, which is what Vercel, Netlify or a plain web server want.
 
 ## Usage
 
 1. Paste DSA code in **Python, JavaScript, Java, or C++** (or load a sample)
 2. Add an example comment: `# Example: twoSum([2, 7, 11, 15], 9)` or `// Example: ...`
-3. Click **Visualize** — instant pattern-based trace (no API key)
+   — or type the input into the **Test case** field
+3. Click **Visualize**
 4. Use the step slider to scrub through execution
 
 ### Supported DSA patterns (any language)
@@ -167,21 +178,22 @@ src/
 ├── lib/
 │   ├── engine/
 │   │   ├── instrumentCode.ts   # Injects __trace__/__cond__/__ret__ hooks
-│   │   ├── runSandbox.ts       # new Function() executor
+│   │   ├── runSandbox.ts       # new Function() executor with budgets
 │   │   ├── narrateTrace.ts     # Trace → frames, in the author's own terms
+│   │   ├── condenseTrace.ts    # Line frames → beats a viewer can follow
 │   │   ├── patternHint.ts      # Textbook approach, shown beside the trace
-│   │   ├── mergeStepsWithAI.ts # Template merger (AI tier only)
 │   │   ├── analyzeLocally.ts   # Main orchestrator
 │   │   ├── python/             # Pyodide sandbox + settrace harness
-│   │   └── templates/          # Static explanation packs
+│   │   └── technique/          # Which algorithm the code is shaped like
+│   ├── dsa/                    # Pattern tracers (Java/C++ fallback)
 │   ├── scenarios/              # Pre-built demo timelines
+│   ├── samples.ts              # Code samples in the editor's menu
 │   └── types.ts
-├── components/
-│   ├── engine/                 # Canvas, player, TraceStepView,
-│   │                           # PatternHintBanner
-│   └── modes/                  # ARRAY, RESULT_ARRAY, HASH_MAP,
-│                               # LINKED_LIST, TREE, GRID
-└── app/api/templates/          # Optional slim Gemini endpoint
+└── components/
+    ├── engine/                 # Canvas, player, TraceStepView,
+    │                           # PatternHintBanner, StateInspector
+    └── modes/                  # ARRAY, RESULT_ARRAY, HASH_MAP, LINKED_LIST,
+                                # TREE, GRID, CONTAINER (queue/stack/set)
 ```
 
 ## License
@@ -190,7 +202,8 @@ MIT — see [LICENSE](LICENSE).
 
 ## Tech Stack
 
-- [Next.js 15](https://nextjs.org/)
+- [Next.js 15](https://nextjs.org/) (static export)
 - [React 19](https://react.dev/)
 - [Tailwind CSS 4](https://tailwindcss.com/)
 - [Framer Motion](https://www.framer.com/motion/)
+- [Pyodide](https://pyodide.org/) for in-browser Python

@@ -10,9 +10,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "VisualizeOurCode — DSA Visualization Engine",
+  title: "VisualizeOurCode — your code, step by step",
   description:
-    "Universal data structure and algorithm visualizer with array, hash map, linked list, and tree modes.",
+    "Paste your own LeetCode solution and watch it run. Python and JavaScript execute for real in the browser, mistakes included — free, no account, no AI.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

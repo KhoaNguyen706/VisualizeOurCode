@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { analyzeLocally } from "./analyzeLocally";
 import type { AnalyzeError, AnalyzeResult } from "./analyzeLocally";
 
-/** The AI tier needs a network call and a key; these cover the offline path. */
-const OFFLINE = { skipAIPlan: true } as const;
+/** Node has no Pyodide, so Python here exercises the labelled fallback. */
+const OFFLINE = {} as const;
 
 function expectSuccess(result: AnalyzeResult | AnalyzeError): AnalyzeResult {
   if ("error" in result) {
