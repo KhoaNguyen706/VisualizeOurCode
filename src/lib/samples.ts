@@ -210,4 +210,70 @@ export const CODE_SAMPLES = [
 
 # Example: isValid("()[]{}")`,
   },
+  {
+    id: "fib-recursion-py",
+    label: "Fibonacci, recursive (Python) — call tree",
+    language: "python",
+    code: `def fib(n):
+    if n < 2:
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+# Example: fib(5)`,
+  },
+  {
+    id: "num-islands-dfs-py",
+    label: "Number of Islands, DFS (Python) — call tree + grid",
+    language: "python",
+    code: `class Solution:
+    def numIslands(self, grid: List[List[str]]) -> int:
+        rows, cols = len(grid), len(grid[0])
+        count = 0
+
+        def dfs(r, c):
+            if r < 0 or c < 0 or r >= rows or c >= cols or grid[r][c] != "1":
+                return
+            grid[r][c] = "0"
+            dfs(r + 1, c)
+            dfs(r - 1, c)
+            dfs(r, c + 1)
+            dfs(r, c - 1)
+
+        for r in range(rows):
+            for c in range(cols):
+                if grid[r][c] == "1":
+                    dfs(r, c)
+                    count += 1
+        return count
+
+# Example: Solution().numIslands([["1","1","0"],["0","1","0"],["0","0","1"]])`,
+  },
+  {
+    id: "grid-bfs-seen-py",
+    label: "Walls and Gates, BFS + set (Python) — queue + grid",
+    language: "python",
+    code: `from collections import deque
+
+def wallsAndGates(rooms):
+    INF = 2147483647
+    rows, cols = len(rooms), len(rooms[0])
+    q = deque()
+    seen = set()
+    for r in range(rows):
+        for c in range(cols):
+            if rooms[r][c] == 0:
+                q.append((r, c))
+                seen.add((r, c))
+    while q:
+        r, c = q.popleft()
+        for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols and rooms[nr][nc] == INF and (nr, nc) not in seen:
+                rooms[nr][nc] = rooms[r][c] + 1
+                seen.add((nr, nc))
+                q.append((nr, nc))
+    return rooms
+
+# Example: wallsAndGates([[2147483647,-1,0,2147483647],[2147483647,2147483647,2147483647,-1],[2147483647,-1,2147483647,-1],[0,-1,2147483647,2147483647]])`,
+  },
 ] as const;
