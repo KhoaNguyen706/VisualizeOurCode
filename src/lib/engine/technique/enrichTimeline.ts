@@ -270,7 +270,7 @@ function applyTechniqueVisuals(
 const ALLOWED: VisualizationTechnique[] = [
   "two_pointer", "sliding_window", "binary_search", "dp_grid", "dfs", "bfs", "graph",
   "backtrack", "recursion", "hash_map", "hash_set", "linked_list", "linked_list_cycle",
-  "array_scan", "generic",
+  "heap", "array_scan", "generic",
 ];
 
 function asTechnique(v: unknown): VisualizationTechnique | undefined {

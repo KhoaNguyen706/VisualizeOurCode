@@ -276,4 +276,26 @@ def wallsAndGates(rooms):
 
 # Example: wallsAndGates([[2147483647,-1,0,2147483647],[2147483647,2147483647,2147483647,-1],[2147483647,-1,2147483647,-1],[0,-1,2147483647,2147483647]])`,
   },
+  {
+    id: "last-stone-weight-py",
+    label: "Last Stone Weight, heap (Python) — heap as a tree",
+    language: "python",
+    code: `import heapq
+
+class Solution:
+    def lastStoneWeight(self, stones: List[int]) -> int:
+        heap = []
+        for stone in stones:
+            heapq.heappush(heap, -stone)
+
+        while len(heap) > 1:
+            x = heapq.heappop(heap)
+            y = heapq.heappop(heap)
+            if x != y:
+                heapq.heappush(heap, x - y)
+
+        return -heap[0] if heap else 0
+
+# Example: Solution().lastStoneWeight([2, 7, 4, 1, 8, 1])`,
+  },
 ] as const;

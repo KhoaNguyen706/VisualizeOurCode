@@ -48,6 +48,36 @@ export interface LineEvent {
   argText?: string;
 }
 
+/** `heapq.heappush(heap, x)` / `heappush(heap, x)` / `heapify(heap)` — the heap is the first argument. */
+export const HEAP_ADD_RE =
+  /^(?:heapq\.)?(heappush|heapify|heappushpop|heapreplace)\(\s*([A-Za-z_$][\w$]*)\s*(?:,\s*(.*))?\)\s*$/;
+
+/** `x = heapq.heappop(heap)` / `a, b = heappop(h)` — a take, however it is unpacked. */
+export const HEAP_TAKE_RE =
+  /^(.+?)\s*=(?!=)\s*(?:heapq\.)?(heappop|heappushpop|heapreplace)\(\s*([A-Za-z_$][\w$]*)\s*(?:,.*)?\)/;
+
+/** A bare `heapq.heappop(heap)` whose result is discarded. */
+export const BARE_HEAP_TAKE_RE =
+  /^(?:heapq\.)?(heappop)\(\s*([A-Za-z_$][\w$]*)\s*\)\s*$/;
+
+/** What a line adds to a container, in either the method or the heapq style. */
+export function matchAdd(src: string): { name: string; verb: string; argText: string } | null {
+  const m = src.match(CONTAINER_ADD_RE);
+  if (m) return { name: m[1], verb: m[2], argText: m[3] };
+  const h = src.match(HEAP_ADD_RE);
+  if (h) return { name: h[2], verb: h[1], argText: h[3] ?? "" };
+  return null;
+}
+
+/** What a line takes from a container, in either style; `targets` is the assignment target text. */
+export function matchTake(src: string): { targets: string; name: string; verb: string } | null {
+  const m = src.match(CONTAINER_TAKE_RE);
+  if (m) return { targets: m[1], name: m[2], verb: m[3] };
+  const h = src.match(HEAP_TAKE_RE);
+  if (h) return { targets: h[1], name: h[3], verb: h[2] };
+  return null;
+}
+
 const OTHER: LineEvent = { kind: "other" };
 
 export function stripTrailing(line: string): string {
@@ -69,15 +99,19 @@ export function classifyLine(sourceLine: string, traceKind?: string): LineEvent 
   // before the write patterns stops `if seen[x] == 1:` reading as an assignment.
   if (traceKind === "condition" || traceKind === "loop") return OTHER;
 
-  const taken = src.match(CONTAINER_TAKE_RE);
-  if (taken) return { kind: "take", container: taken[2], verb: taken[3] };
+  const taken = matchTake(src);
+  if (taken) return { kind: "take", container: taken.name, verb: taken.verb };
 
-  const bare = src.match(BARE_TAKE_RE);
-  if (bare) return { kind: "take", container: bare[1], verb: bare[2] };
+  const bare = src.match(BARE_TAKE_RE) ?? src.match(BARE_HEAP_TAKE_RE);
+  if (bare) {
+    // The method form names the container first; the heapq form names the verb first.
+    const isHeap = /heappop/.test(bare[1]);
+    return { kind: "take", container: isHeap ? bare[2] : bare[1], verb: isHeap ? bare[1] : bare[2] };
+  }
 
-  const added = src.match(CONTAINER_ADD_RE);
+  const added = matchAdd(src);
   if (added) {
-    return { kind: "add", container: added[1], verb: added[2], argText: added[3] };
+    return { kind: "add", container: added.name, verb: added.verb, argText: added.argText };
   }
 
   const write = src.match(INDEXED_WRITE_RE);

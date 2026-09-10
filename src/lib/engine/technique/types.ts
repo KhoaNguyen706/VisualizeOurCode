@@ -12,6 +12,7 @@ export type VisualizationTechnique =
   | "hash_set"
   | "linked_list"
   | "linked_list_cycle"
+  | "heap"
   | "array_scan"
   | "generic";
 
@@ -29,6 +30,7 @@ export const TECHNIQUE_LABELS: Record<VisualizationTechnique, string> = {
   hash_set: "Hash Set",
   linked_list: "Linked List",
   linked_list_cycle: "Cycle Detection",
+  heap: "Heap / Priority Queue",
   array_scan: "Array Scan",
   generic: "Algorithm",
 };

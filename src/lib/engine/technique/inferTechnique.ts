@@ -153,6 +153,9 @@ function leadTechnique(code: string, recursive: boolean): VisualizationTechnique
   if (/\bbacktrack/.test(c)) return "backtrack";
   if (/\bdfs\b|depth.?first|recurse/.test(c)) return "dfs";
   if (/\bpath\.append|\bpath\.pop/.test(c)) return "backtrack";
+  // A heap is the whole mechanism of the problems that use one, so it leads
+  // whenever the author reached for heapq or a priority queue.
+  if (HEAP_RE.test(c)) return "heap";
   if (/palindrome|ispalindrome/.test(c)) return "two_pointer";
   if (
     /\bwhile\b[\s\S]*\b(left|right|l|r)\b\s*[<>=]/.test(c) &&
@@ -211,8 +214,11 @@ const FAMILY: Partial<Record<VisualizationTechnique, Family>> = {
  * are deliberately narrower than the lead chain: a supporting label is a chip
  * beside the picture, and a chip that fires on a loose match is noise.
  */
+const HEAP_RE = /\bheapq\b|\bheappush\b|\bheappop\b|\bheapify\b|\bheappushpop\b|\bheapreplace\b|priorityqueue|\bnlargest\b|\bnsmallest\b/;
+
 const SUPPORTING: Array<[VisualizationTechnique, (c: string, recursive: boolean) => boolean]> = [
   ["backtrack", (c) => /\bbacktrack/.test(c)],
+  ["heap", (c) => HEAP_RE.test(c)],
   ["dfs", (c) => /\bdfs\b|depth.?first/.test(c)],
   ["recursion", (_c, recursive) => recursive],
   ["bfs", (c) => /\bbfs\b|breadth.?first|\bpopleft\b|\.shift\s*\(/.test(c)],

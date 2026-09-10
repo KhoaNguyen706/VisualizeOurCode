@@ -30,7 +30,7 @@ export interface ContainerView {
   /** The author's own variable name, e.g. `q`. */
   name: string;
   /** Which end items leave from, inferred from the verbs the author used. */
-  kind: "queue" | "stack" | "set";
+  kind: "queue" | "stack" | "set" | "heap";
   /** Each item rendered as text, in the order the container holds them. */
   items: string[];
 }

@@ -11,6 +11,7 @@ const KIND_LABEL = {
   queue: "QUEUE",
   stack: "STACK",
   set: "SET",
+  heap: "HEAP",
 } as const;
 
 /** Where the next item leaves from — the end the algorithm actually reads. */
@@ -18,6 +19,7 @@ const KIND_HINT = {
   queue: "takes from the front",
   stack: "takes from the top",
   set: "membership only",
+  heap: "takes the smallest",
 } as const;
 
 /**

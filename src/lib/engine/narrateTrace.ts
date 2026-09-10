@@ -11,11 +11,7 @@ import type {
 } from "@/lib/types";
 import { EMPTY_STRUCTURES } from "@/lib/types";
 import type { TraceStep } from "./runSandbox";
-import {
-  CONTAINER_ADD_RE,
-  CONTAINER_TAKE_RE,
-  INDEXED_WRITE_RE,
-} from "./lineEvents";
+import { INDEXED_WRITE_RE, matchAdd, matchTake } from "./lineEvents";
 
 /**
  * Narrate a trace using only what the code actually did.
@@ -116,6 +112,10 @@ const ADD_VERBS: Record<string, string> = {
   add: "Add",
   push: "Push",
   put: "Put",
+  heappush: "Push",
+  heapify: "Heapify",
+  heappushpop: "Push",
+  heapreplace: "Push",
 };
 const TAKE_PHRASES: Record<string, string> = {
   popleft: "Take from the front of",
@@ -124,6 +124,9 @@ const TAKE_PHRASES: Record<string, string> = {
   shift: "Take from the front of",
   get: "Take from",
   dequeue: "Take from",
+  heappop: "Pop the smallest from",
+  heappushpop: "Push, then pop the smallest from",
+  heapreplace: "Pop the smallest from, then push into",
 };
 
 /**
@@ -263,24 +266,32 @@ function buildMessage(
   }
 
   // Growing a container: name the item that went in and how big it is now.
-  const added = src.match(CONTAINER_ADD_RE);
+  const added = matchAdd(src);
   if (added) {
-    const [, name, verb, argText] = added;
+    const { name, verb, argText } = added;
     const container = vars[name];
     const size = countLabel(container);
+    if (verb === "heapify") {
+      return `Heapify ${name}${size ? ` — ${name} now holds ${size}` : ""}${
+        Array.isArray(container) && container.length ? `, smallest on top: ${formatValue(container[0])}` : ""
+      }`;
+    }
+    // A heap sifts the new item to wherever it belongs, so the last slot is
+    // not "what went in"; the argument, with names resolved, is.
+    const isHeap = verb.startsWith("heap");
     const item =
-      Array.isArray(container) && container.length > 0 && verb !== "appendleft"
+      !isHeap && Array.isArray(container) && container.length > 0 && verb !== "appendleft"
         ? formatValue(container[container.length - 1])
-        : verb === "appendleft" && Array.isArray(container) && container.length > 0
+        : !isHeap && verb === "appendleft" && Array.isArray(container) && container.length > 0
           ? formatValue(container[0])
           : substituteValues(argText, vars);
-    return `${ADD_VERBS[verb]} ${item} to ${name}${size ? ` — ${name} now holds ${size}` : ""}`;
+    return `${ADD_VERBS[verb] ?? "Add"} ${item} to ${name}${size ? ` — ${name} now holds ${size}` : ""}`;
   }
 
   // Taking from a container: lead with the action, then what came out.
-  const taken = src.match(CONTAINER_TAKE_RE);
+  const taken = matchTake(src);
   if (taken) {
-    const [, targets, name, verb] = taken;
+    const { targets, name, verb } = taken;
     const bound = targets
       .split(",")
       .map((t) => t.trim())
@@ -429,6 +440,9 @@ function linkedListToLinear(head: unknown): ListNode[] {
 const CONTAINER_USE_RE =
   /\b([A-Za-z_$][\w$]*)\.(append|appendleft|add|push|put|popleft|pop|shift|dequeue)\s*\(/g;
 
+const HEAP_USE_RE =
+  /\b(?:heapq\.)?(?:heappush|heappop|heapify|heappushpop|heapreplace)\(\s*([A-Za-z_$][\w$]*)/g;
+
 const TAKE_VERBS = new Set(["popleft", "pop", "shift", "dequeue"]);
 const ADD_VERBS_SET = new Set(["append", "appendleft", "add", "push", "put"]);
 
@@ -451,7 +465,15 @@ export function detectContainers(sourceCode: string): Map<string, ContainerView[
   }
 
   const out = new Map<string, ContainerView["kind"]>();
+
+  // heapq works on a plain list by function call — `heappush(heap, x)` — so
+  // the heap is the first argument, not the receiver. Any list the author
+  // heapifies, pushes onto or pops from that way is a heap, pops or not: a
+  // heap built only to read `heap[0]` is still a heap.
+  for (const m of sourceCode.matchAll(HEAP_USE_RE)) out.set(m[1], "heap");
+
   for (const [name, used] of verbs) {
+    if (out.has(name)) continue;
     const takes = [...used].some((v) => TAKE_VERBS.has(v));
     const adds = [...used].some((v) => ADD_VERBS_SET.has(v));
     if (!takes || !adds) continue;

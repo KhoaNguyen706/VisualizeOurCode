@@ -88,6 +88,7 @@ function addPhrase(
   if (kind === "queue") return "queue";
   if (kind === "stack") return "push";
   if (kind === "set") return "record";
+  if (kind === "heap") return "push";
   switch (verb) {
     case "push":
       return "push";

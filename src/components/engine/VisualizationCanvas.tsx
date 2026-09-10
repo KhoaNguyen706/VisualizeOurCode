@@ -9,6 +9,9 @@ import { LinkedListMode } from "@/components/modes/LinkedListMode";
 import { TreeMode } from "@/components/modes/TreeMode";
 import { GridMode } from "@/components/modes/GridMode";
 import { ContainerMode } from "@/components/modes/ContainerMode";
+import { HeapMode } from "@/components/modes/HeapMode";
+
+const CONTAINER_LABEL = { queue: "Queue", stack: "Stack", set: "Set", heap: "Heap" } as const;
 import { ResultArrayMode } from "@/components/modes/ResultArrayMode";
 import { TECHNIQUE_LABELS } from "@/lib/engine/technique/types";
 import type { VisualizationTechnique } from "@/lib/engine/technique/types";
@@ -45,6 +48,7 @@ const LEAD_ORDER: Record<VisualizationTechnique, Section[]> = {
   hash_set: ["array", "maps", "result", "container", "grid", "list", "tree"],
   linked_list: ["list", "array", "maps", "container", "grid", "tree", "result"],
   linked_list_cycle: ["list", "array", "maps", "container", "grid", "tree", "result"],
+  heap: ["container", "array", "maps", "result", "grid", "tree", "list"],
   array_scan: BY_STRUCTURE,
   generic: BY_STRUCTURE,
 };
@@ -105,7 +109,7 @@ export function VisualizationCanvas({ frame }: VisualizationCanvasProps) {
   const drawn = sections.map((section) => {
     switch (section) {
       case "container":
-        return s.containerData?.kind === "queue" ? "Queue" : s.containerData?.kind === "stack" ? "Stack" : "Set";
+        return CONTAINER_LABEL[s.containerData?.kind ?? "set"];
       case "array":
         return "Array";
       case "maps":
@@ -134,7 +138,7 @@ export function VisualizationCanvas({ frame }: VisualizationCanvasProps) {
   const render = (section: Section) => {
     switch (section) {
       case "container":
-        return <ContainerMode frame={frame} />;
+        return s.containerData?.kind === "heap" ? <HeapMode frame={frame} /> : <ContainerMode frame={frame} />;
       case "array":
         return (
           <>
