@@ -10,20 +10,34 @@ import { TreeMode } from "@/components/modes/TreeMode";
 import { GridMode } from "@/components/modes/GridMode";
 import { ContainerMode } from "@/components/modes/ContainerMode";
 import { HeapMode } from "@/components/modes/HeapMode";
-
-const CONTAINER_LABEL = { queue: "Queue", stack: "Stack", set: "Set", heap: "Heap" } as const;
+import { IntervalMode } from "@/components/modes/IntervalMode";
+import { BitMode } from "@/components/modes/BitMode";
 import { ResultArrayMode } from "@/components/modes/ResultArrayMode";
 import { TECHNIQUE_LABELS } from "@/lib/engine/technique/types";
 import type { VisualizationTechnique } from "@/lib/engine/technique/types";
+
+const CONTAINER_LABEL = { queue: "Queue", stack: "Stack", set: "Set", heap: "Heap" } as const;
 
 interface VisualizationCanvasProps {
   frame: TimelineFrame;
 }
 
-type Section = "container" | "grid" | "tree" | "list" | "array" | "maps" | "result";
+type Section =
+  | "container"
+  | "grid"
+  | "datatree"
+  | "tree"
+  | "list"
+  | "array"
+  | "maps"
+  | "result"
+  | "intervals"
+  | "bits";
 
 /** With nothing recognised, the order is simply what the code holds. */
-const BY_STRUCTURE: Section[] = ["array", "maps", "container", "grid", "list", "tree", "result"];
+const BY_STRUCTURE: Section[] = [
+  "array", "maps", "container", "datatree", "grid", "list", "tree", "intervals", "bits", "result",
+];
 
 /**
  * Which picture leads.
@@ -31,27 +45,35 @@ const BY_STRUCTURE: Section[] = ["array", "maps", "container", "grid", "list", "
  * The lead technique is what the code *is*, so its structure sits on top and
  * everything else the code builds follows it — the queue above the grid for a
  * BFS, the table first for a DP, the array with its pointers first for a
- * two-pointer walk, the call tree first for a recursion. Supporting layers are
- * still drawn; they just come after.
+ * two-pointer walk, the call tree first for a recursion. Only the front of the
+ * order is spelled out; the rest follows the structural default.
  */
-const LEAD_ORDER: Record<VisualizationTechnique, Section[]> = {
-  bfs: ["container", "grid", "tree", "maps", "array", "list", "result"],
-  dfs: ["tree", "container", "grid", "array", "maps", "list", "result"],
-  recursion: ["tree", "container", "array", "maps", "grid", "list", "result"],
-  backtrack: ["tree", "container", "array", "result", "maps", "grid", "list"],
-  graph: ["tree", "container", "maps", "grid", "array", "list", "result"],
-  dp_grid: ["grid", "maps", "array", "tree", "container", "list", "result"],
-  two_pointer: ["array", "maps", "container", "grid", "list", "tree", "result"],
-  sliding_window: ["array", "maps", "container", "grid", "list", "tree", "result"],
-  binary_search: ["array", "maps", "container", "grid", "list", "tree", "result"],
-  hash_map: ["array", "maps", "result", "container", "grid", "list", "tree"],
-  hash_set: ["array", "maps", "result", "container", "grid", "list", "tree"],
-  linked_list: ["list", "array", "maps", "container", "grid", "tree", "result"],
-  linked_list_cycle: ["list", "array", "maps", "container", "grid", "tree", "result"],
-  heap: ["container", "array", "maps", "result", "grid", "tree", "list"],
-  array_scan: BY_STRUCTURE,
-  generic: BY_STRUCTURE,
+const LEAD_FIRST: Partial<Record<VisualizationTechnique, Section[]>> = {
+  bfs: ["datatree", "container", "grid", "tree"],
+  dfs: ["datatree", "tree", "container", "grid"],
+  recursion: ["tree", "datatree", "container"],
+  backtrack: ["tree", "container", "array", "result"],
+  graph: ["datatree", "tree", "container", "maps", "grid"],
+  advanced_graph: ["datatree", "container", "maps", "grid", "tree"],
+  tree: ["datatree", "container", "tree"],
+  trie: ["datatree", "maps", "tree"],
+  dp_grid: ["grid", "maps", "array"],
+  dp_1d: ["array", "maps", "grid"],
+  stack: ["container", "array", "maps"],
+  heap: ["container", "array", "maps", "result"],
+  intervals: ["intervals", "array", "result"],
+  bit_manipulation: ["bits", "array"],
+  linked_list: ["list"],
+  linked_list_cycle: ["list"],
+  hash_map: ["array", "maps", "result"],
+  hash_set: ["array", "maps", "result"],
+  math_geometry: ["grid", "array", "maps"],
 };
+
+function orderFor(lead: VisualizationTechnique): Section[] {
+  const first = LEAD_FIRST[lead] ?? [];
+  return [...first, ...BY_STRUCTURE.filter((s) => !first.includes(s))];
+}
 
 /** The engine's status, in the reader's words: what this beat is. */
 const STATUS_WORD: Record<TimelineFrame["statusType"], string> = {
@@ -71,10 +93,20 @@ function isTechnique(v: unknown): v is VisualizationTechnique {
   return typeof v === "string" && v in TECHNIQUE_LABELS;
 }
 
-/** What the tree section is, in the lead technique's own words. */
+/** What the call-tree section is, in the lead technique's own words. */
 function treeHeading(lead: VisualizationTechnique): string {
   if (lead === "graph" || lead === "bfs") return "Graph";
   if (lead === "recursion" || lead === "backtrack" || lead === "dfs") return "Calls";
+  return "Calls";
+}
+
+/** What the author's own tree is. */
+function dataTreeHeading(lead: VisualizationTechnique, nodes: TimelineFrame["structures"]["dataTreeData"]): string {
+  if (lead === "trie") return "Trie";
+  if (lead === "advanced_graph" || lead === "graph") {
+    const roots = nodes?.filter((n) => n.parent === null).length ?? 0;
+    return roots > 1 ? "Forest" : "Graph";
+  }
   return "Tree";
 }
 
@@ -98,10 +130,13 @@ export function VisualizationCanvas({ frame }: VisualizationCanvasProps) {
   // or an author's `result` variable — never conjured because of the technique.
   if (s.resultData !== undefined) sections.push("result");
   if (modes.includes("LINKED_LIST") && s.listData.length > 0) sections.push("list");
+  if ((s.dataTreeData?.length ?? 0) > 0) sections.push("datatree");
   if (modes.includes("TREE") && s.treeData.length > 0) sections.push("tree");
   if (lead === "dp_grid" || (s.gridData?.length ?? 0) > 0) sections.push("grid");
+  if (s.intervalData) sections.push("intervals");
+  if ((s.bitData?.length ?? 0) > 0) sections.push("bits");
 
-  const order = LEAD_ORDER[lead];
+  const order = orderFor(lead);
   sections.sort((a, b) => order.indexOf(a) - order.indexOf(b));
   const several = sections.length > 1;
 
@@ -118,10 +153,16 @@ export function VisualizationCanvas({ frame }: VisualizationCanvasProps) {
         return "Result";
       case "list":
         return "Linked List";
+      case "datatree":
+        return dataTreeHeading(lead, s.dataTreeData);
       case "tree":
         return treeHeading(lead);
       case "grid":
         return lead === "dp_grid" ? "DP Table" : "Grid";
+      case "intervals":
+        return "Intervals";
+      case "bits":
+        return "Bits";
     }
   });
 
@@ -170,6 +211,13 @@ export function VisualizationCanvas({ frame }: VisualizationCanvasProps) {
         return <ResultArrayMode frame={frame} />;
       case "list":
         return <LinkedListMode frame={frame} />;
+      case "datatree":
+        return (
+          <>
+            {heading(dataTreeHeading(lead, s.dataTreeData))}
+            <TreeMode frame={frame} nodes={s.dataTreeData} currentKey="treeNode" hideDepth />
+          </>
+        );
       case "tree":
         return (
           <>
@@ -179,6 +227,10 @@ export function VisualizationCanvas({ frame }: VisualizationCanvasProps) {
         );
       case "grid":
         return <GridMode frame={frame} />;
+      case "intervals":
+        return <IntervalMode frame={frame} />;
+      case "bits":
+        return <BitMode frame={frame} />;
     }
   };
 

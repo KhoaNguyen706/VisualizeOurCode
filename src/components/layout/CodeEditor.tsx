@@ -3,6 +3,7 @@
 import { useMemo, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { CODE_SAMPLES } from "@/lib/samples";
+import { TOPICS } from "@/lib/roadmap";
 import { scenarios } from "@/lib/scenarios";
 import { tokenizeLines } from "@/lib/visual/highlight";
 import type { Token, TokenType } from "@/lib/visual/highlight";
@@ -160,10 +161,14 @@ export function CodeEditor({
           aria-label="Load sample"
         >
           <option value="">Samples…</option>
-          {CODE_SAMPLES.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.label}
-            </option>
+          {TOPICS.map((t) => (
+            <optgroup key={t.id} label={t.label}>
+              {CODE_SAMPLES.filter((s) => s.topic === t.id).map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
 

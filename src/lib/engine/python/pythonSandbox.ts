@@ -94,7 +94,9 @@ _steps = []
 _halted = [False]
 
 def _safe(v, depth=0):
-    if depth > 6:
+    # Deep enough for a 30-node list or a tree of that height; the item caps
+    # below keep the breadth bounded. Six levels cut every real linked list.
+    if depth > 30:
         return "[depth limit]"
     # json.dumps writes bare Infinity/NaN, which JSON.parse rejects outright --
     # and float("inf") is how half of interview Python seeds a min/max. Emitting
@@ -121,11 +123,154 @@ def _safe(v, depth=0):
         return {str(k): _safe(x, depth + 1) for k, x in list(v.items())[:100]}
     d = getattr(v, "__dict__", None)
     if isinstance(d, dict):
-        return {str(k): _safe(x, depth + 1) for k, x in list(d.items())[:100]}
+        # The object's identity travels with its fields, so the JS side can
+        # tell which node of the tree a local like "cur" is pointing at, and
+        # can close a cycle instead of unrolling it.
+        out = {"__id": id(v)}
+        for k, x in list(d.items())[:100]:
+            out[str(k)] = _safe(x, depth + 1)
+        return out
     try:
         return repr(v)
     except Exception:
         return "<unrepr>"
+
+# LeetCode's own node classes, defined exactly as the judge defines them, so a
+# pasted solution that never declares them still runs. A solution that does
+# declare its own replaces these, since the author's source runs afterwards.
+class ListNode:
+    def __init__(self, val=0, next=None):
+        self.val = val
+        self.next = next
+
+class TreeNode:
+    def __init__(self, val=0, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+def _build_list(items, pos=None):
+    if not isinstance(items, (list, tuple)):
+        return items
+    nodes = [ListNode(x) for x in items]
+    for a, b in zip(nodes, nodes[1:]):
+        a.next = b
+    if nodes and pos is not None and 0 <= pos < len(nodes):
+        nodes[-1].next = nodes[pos]
+    return nodes[0] if nodes else None
+
+def _build_tree(items):
+    # LeetCode's level-order form: [3, 9, 20, None, None, 15, 7].
+    if not isinstance(items, (list, tuple)):
+        return items
+    if not items or items[0] is None:
+        return None
+    root = TreeNode(items[0])
+    queue = [root]
+    i = 1
+    while queue and i < len(items):
+        node = queue.pop(0)
+        if i < len(items):
+            v = items[i]
+            i += 1
+            if v is not None:
+                node.left = TreeNode(v)
+                queue.append(node.left)
+        if i < len(items):
+            v = items[i]
+            i += 1
+            if v is not None:
+                node.right = TreeNode(v)
+                queue.append(node.right)
+    return root
+
+def _is_node(v):
+    return v is not None and not isinstance(v, (list, tuple, dict, str, int, float, bool)) and (
+        hasattr(v, "next") or hasattr(v, "left") or hasattr(v, "right") or hasattr(v, "children")
+    )
+
+_TREE_NAMES = ("root", "root1", "root2", "subroot", "p", "q", "t1", "t2", "tree")
+_LIST_NAMES = ("head", "l1", "l2", "list1", "list2", "heada", "headb", "node", "lst")
+
+# The entry call's node arguments, re-serialised on every step so the whole
+# structure is visible while a recursive call holds only its own subtree.
+_entry_roots = {}
+
+def _coerce_arg(name, ann, val, pos, src):
+    import inspect as _inspect
+    a = "" if ann is _inspect.Parameter.empty else str(ann)
+    if "TreeNode" in a:
+        if ("List[" in a or "list[" in a) and isinstance(val, list):
+            return [_build_tree(x) for x in val]
+        return _build_tree(val)
+    if "ListNode" in a:
+        if ("List[" in a or "list[" in a) and isinstance(val, list) and all(isinstance(x, (list, type(None))) for x in val):
+            return [_build_list(x) for x in val]
+        return _build_list(val, pos if name == "head" else None)
+    if not a and isinstance(val, (list, tuple)):
+        lname = name.lower()
+        if lname in _TREE_NAMES and (".left" in src or ".right" in src):
+            return _build_tree(val)
+        if lname in _LIST_NAMES and ".next" in src:
+            return _build_list(val, pos if name == "head" else None)
+    return val
+
+def _run_entry(expr, src):
+    import ast as _ast
+    import inspect as _inspect
+    module = _ast.parse(expr, mode="exec")
+    # A class-design problem is driven by several statements -- "t = Trie();
+    # t.insert('app')" -- and those simply run as written.
+    if len(module.body) != 1 or not isinstance(module.body[0], _ast.Expr):
+        exec(compile(module, "<entry>", "exec"), _globals)
+        return _globals.get("__entry_result__")
+    call = module.body[0].value
+    def ev(node):
+        return eval(compile(_ast.Expression(node), "<entry>", "eval"), _globals)
+    if not isinstance(call, _ast.Call):
+        return ev(call)
+    try:
+        fn = ev(call.func)
+    except NameError:
+        # "hasCycle([3,2,0,-4])" on a class Solution: the name is a method, so
+        # the class it belongs to is found and instantiated for it.
+        if not isinstance(call.func, _ast.Name):
+            raise
+        owner = None
+        for _v in list(_globals.values()):
+            # Defined on the class itself -- so the author's own class, not a
+            # seeded builtin that happens to inherit a method of that name.
+            if isinstance(_v, type) and callable(vars(_v).get(call.func.id)):
+                owner = _v
+                break
+        if owner is None:
+            raise
+        fn = getattr(owner(), call.func.id)
+    args = [ev(a) for a in call.args]
+    kwargs = {}
+    for k in call.keywords:
+        if k.arg:
+            kwargs[k.arg] = ev(k.value)
+    try:
+        params = [p for p in _inspect.signature(fn).parameters.values() if p.name not in ("self", "cls")]
+    except Exception:
+        params = []
+    # "pos=1" on a hasCycle example is where the tail links back to, in
+    # LeetCode's own words; it is not an argument of the function.
+    pos = None
+    if "pos" in kwargs and not any(p.name == "pos" for p in params):
+        pos = kwargs.pop("pos")
+    for i, p in enumerate(params):
+        if i < len(args):
+            args[i] = _coerce_arg(p.name, p.annotation, args[i], pos, src)
+        elif p.name in kwargs:
+            kwargs[p.name] = _coerce_arg(p.name, p.annotation, kwargs[p.name], pos, src)
+    _entry_roots.clear()
+    for i, p in enumerate(params):
+        v = args[i] if i < len(args) else kwargs.get(p.name)
+        if _is_node(v) or (isinstance(v, list) and v and all(x is None or _is_node(x) for x in v)):
+            _entry_roots[p.name] = v
+    return fn(*args, **kwargs)
 
 def _snapshot(loc):
     out = {}
@@ -187,7 +332,7 @@ def _tracer(frame, event, arg):
                 _halted[0] = True
                 sys.settrace(None)
                 raise _Stop()
-            _steps.append({
+            _rec = {
                 "line": frame.f_lineno,
                 "frame": _fid,
                 "parent": _parent,
@@ -195,7 +340,10 @@ def _tracer(frame, event, arg):
                 "args": _args,
                 "depth": _depth,
                 "vars": _snapshot(frame.f_locals),
-            })
+            }
+            if _entry_roots:
+                _rec["roots"] = {k: _safe(v) for k, v in _entry_roots.items()}
+            _steps.append(_rec)
         elif event == "exception":
             _raised[0] = True
         elif event == "return":
@@ -215,7 +363,7 @@ def _tracer(frame, event, arg):
 
     return _local
 
-_src = __USER_SOURCE__ + "\\n__entry_result__ = " + __ENTRY_CALL__ + "\\n"
+_src = __USER_SOURCE__ + "\\n__entry_result__ = __run_entry__(" + repr(__ENTRY_CALL__) + ")\\n"
 
 # LeetCode-style sources annotate with typing names -- "grid: List[List[int]]"
 # -- and never import them, because the judge supplies them ambiently. Python
@@ -226,6 +374,9 @@ _src = __USER_SOURCE__ + "\\n__entry_result__ = " + __ENTRY_CALL__ + "\\n"
 # extra import line would shift every recorded line number one off the editor
 # gutter, and the trace's only job is to point at the line that really ran.
 _globals = {}
+_globals["ListNode"] = ListNode
+_globals["TreeNode"] = TreeNode
+_globals["__run_entry__"] = lambda expr: _run_entry(expr, __USER_SOURCE__)
 try:
     import typing
     for _n in dir(typing):

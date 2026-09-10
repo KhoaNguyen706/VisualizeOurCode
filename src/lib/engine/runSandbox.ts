@@ -23,6 +23,13 @@ export interface TraceStep {
   args?: Record<string, unknown>;
   /** Nesting depth of the call; the entry call is 1. */
   depth?: number;
+  /**
+   * The entry call's node-shaped arguments — a tree's root, a list's head — as
+   * they stand after this step, whichever call the step ran in. A recursive
+   * walk only ever holds its own subtree in its locals; the whole structure,
+   * mutations included, lives here.
+   */
+  roots?: Record<string, unknown>;
 }
 
 export interface SandboxResult {

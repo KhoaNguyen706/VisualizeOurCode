@@ -9,9 +9,12 @@ const STORAGE_KEY = "voc-appearance";
 interface HeaderProps {
   /** The link that reproduces the editor's current contents. */
   getShareUrl: () => string;
+  /** Open the roadmap; the button is lit while it is open. */
+  onToggleRoadmap: () => void;
+  roadmapOpen: boolean;
 }
 
-export function Header({ getShareUrl }: HeaderProps) {
+export function Header({ getShareUrl, onToggleRoadmap, roadmapOpen }: HeaderProps) {
   const [appearance, setAppearance] = useState<Appearance>("system");
   const [mounted, setMounted] = useState(false);
   const [shared, setShared] = useState<"idle" | "copied" | "failed">("idle");
@@ -90,6 +93,23 @@ export function Header({ getShareUrl }: HeaderProps) {
       <div className="ml-auto flex items-center gap-2">
         <button
           type="button"
+          onClick={onToggleRoadmap}
+          className="mac-btn"
+          style={{
+            height: 22,
+            padding: "0 9px",
+            fontSize: 11,
+            color: roadmapOpen ? "var(--mac-accent)" : undefined,
+            borderColor: roadmapOpen ? "var(--mac-accent)" : undefined,
+          }}
+          title="Every topic the tracer can draw, with worked problems"
+          aria-pressed={roadmapOpen}
+        >
+          <MapIcon />
+          Roadmap
+        </button>
+        <button
+          type="button"
           onClick={() => void share()}
           className="mac-btn"
           style={{ height: 22, padding: "0 9px", fontSize: 11 }}
@@ -119,6 +139,17 @@ const APPEARANCE_LABEL: Record<Appearance, string> = {
   light: "Light",
   dark: "Dark",
 };
+
+function MapIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+      <rect x="5.5" y="1.5" width="5" height="3.5" rx="1" />
+      <rect x="1.5" y="11" width="5" height="3.5" rx="1" />
+      <rect x="9.5" y="11" width="5" height="3.5" rx="1" />
+      <path d="M8 5v2.5M4 11V9a1.5 1.5 0 011.5-1.5h5A1.5 1.5 0 0112 9v2" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 function LinkIcon() {
   return (

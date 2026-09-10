@@ -12,6 +12,7 @@ import type {
 import { EMPTY_STRUCTURES } from "@/lib/types";
 import type { TraceStep } from "./runSandbox";
 import { INDEXED_WRITE_RE, matchAdd, matchTake } from "./lineEvents";
+import { IdRegistry, NODE_ID, collectList, findDataTree } from "./authorStructures";
 
 /**
  * Narrate a trace using only what the code actually did.
@@ -40,7 +41,13 @@ export function formatValue(v: unknown): string {
     return inner.length > MAX_INLINE_LEN ? `[…${v.length} items]` : `[${inner}]`;
   }
   if (typeof v === "object") {
-    const entries = Object.entries(v as Record<string, unknown>);
+    const obj = v as Record<string, unknown>;
+    // A list or tree node is named by what it holds, not by its fields — the
+    // links are drawn, and `dfs({val: 3, left: …})` on a call pill is noise.
+    if (("next" in obj || "left" in obj || "right" in obj) && ("val" in obj || "value" in obj)) {
+      return `node ${formatValue(obj.val ?? obj.value)}`;
+    }
+    const entries = Object.entries(obj).filter(([k]) => k !== NODE_ID);
     if (entries.length === 0) return "{}";
     const inner = entries.map(([k, val]) => `${k}: ${formatValue(val)}`).join(", ");
     return inner.length > MAX_INLINE_LEN ? `{…${entries.length} keys}` : `{${inner}}`;
@@ -166,8 +173,14 @@ function valueAtPath(
   return { found: true, value: cur };
 }
 
+function isNodeLike(v: unknown): boolean {
+  return !!v && typeof v === "object" && !Array.isArray(v) && ("next" in v || "left" in v || "right" in v);
+}
+
 function countLabel(v: unknown): string | null {
   if (Array.isArray(v)) return `${v.length} item${v.length === 1 ? "" : "s"}`;
+  // A node's fields are not "entries" — `prev = cur` binds a node, not a dict.
+  if (isNodeLike(v)) return null;
   if (v && typeof v === "object") {
     const n = Object.keys(v as object).length;
     return `${n} entr${n === 1 ? "y" : "ies"}`;
@@ -385,7 +398,7 @@ function isPlainMap(v: unknown): v is Record<string, unknown> {
 /** Keep only the entries a key/value row can actually show. */
 function scalarEntries(v: Record<string, unknown>): Record<string, number | string> {
   return Object.fromEntries(
-    Object.entries(v).filter(([, x]) => typeof x === "number" || typeof x === "string")
+    Object.entries(v).filter(([k, x]) => k !== NODE_ID && (typeof x === "number" || typeof x === "string"))
   ) as Record<string, number | string>;
 }
 
@@ -534,12 +547,25 @@ function inferContainer(
   return undefined;
 }
 
+/** Registries that keep node ids stable across a whole trace. */
+export interface NodeIds {
+  list: IdRegistry;
+  tree: IdRegistry;
+}
+
+export function newNodeIds(): NodeIds {
+  return { list: new IdRegistry("n"), tree: new IdRegistry("t") };
+}
+
 function inferStructures(
   vars: Record<string, unknown>,
   containers: Map<string, ContainerView["kind"]> = new Map(),
-  sets: Set<string> = new Set()
-): VisualizationStructures {
+  sets: Set<string> = new Set(),
+  roots?: Record<string, unknown>,
+  ids: NodeIds = newNodeIds()
+): { structures: VisualizationStructures; pointers: ActivePointers } {
   const structures: VisualizationStructures = { ...EMPTY_STRUCTURES };
+  const pointers: ActivePointers = {};
 
   const container = inferContainer(vars, containers);
   if (container) structures.containerData = container;
@@ -562,11 +588,21 @@ function inferStructures(
     structures.mapData = primary.data;
   }
 
-  for (const key of ["head", "node", "current", "root"]) {
-    const v = vars[key];
-    if (v && typeof v === "object" && "next" in (v as object)) {
-      structures.listData = linkedListToLinear(v);
-      break;
+  // With node identities in the snapshot the whole list is drawn, whichever
+  // local still reaches it, and each named pointer sits on its node. Without
+  // them (the JavaScript sandbox) the chain from the first head-like local is
+  // what there is.
+  const authored = collectList(roots, vars, ids.list);
+  if (authored) {
+    structures.listData = authored.nodes;
+    Object.assign(pointers, authored.pointers);
+  } else {
+    for (const key of ["head", "node", "current", "root"]) {
+      const v = vars[key];
+      if (v && typeof v === "object" && "next" in (v as object)) {
+        structures.listData = linkedListToLinear(v);
+        break;
+      }
     }
   }
 
@@ -577,13 +613,17 @@ function inferStructures(
   const gridEntry = Object.entries(vars).find(([name, v]) => isTable(name, v));
   if (gridEntry) structures.gridData = gridEntry[1] as (number | string)[][];
 
-  return structures;
+  return { structures, pointers };
 }
 
-const TABLE_NAME_RE = /grid|dp|matrix|board|table|memo|cache|mat/i;
+const TABLE_NAME_RE = /grid|dp|matrix|board|table|memo|cache|\bmat\b/i;
+
+/** A list of pairs under one of these names is a list of edges, never a grid. */
+const EDGE_LIST_NAME_RE = /^(edges?|pairs?|times|intervals?|prerequisites|connections|flights|roads|points)$/i;
 
 function isTable(name: string, v: unknown): boolean {
   if (!Array.isArray(v) || v.length === 0) return false;
+  if (EDGE_LIST_NAME_RE.test(name)) return false;
   const width = Array.isArray(v[0]) ? (v[0] as unknown[]).length : -1;
   if (width < 0) return false;
   const rectangular = v.every(
@@ -621,6 +661,11 @@ function toVariables(vars: Record<string, unknown>): Record<string, VariableValu
     if (v === undefined) continue;
     if (isScalar(v)) {
       out[k] = v;
+    } else if (isNodeLike(v)) {
+      // `prev`, `cur`, `slow`: the node each name is on, by its value — the
+      // links are drawn, and a panel row is one line.
+      const val = (v as Record<string, unknown>).val ?? (v as Record<string, unknown>).value;
+      out[k] = { node: isScalar(val) ? val : String(val) };
     } else if (Array.isArray(v) && v.every(isScalar)) {
       out[k] = v as VariableValue;
     } else if (Array.isArray(v) && v.every((row) => Array.isArray(row) && row.every(isScalar))) {
@@ -628,7 +673,7 @@ function toVariables(vars: Record<string, unknown>): Record<string, VariableValu
     } else if (isPlainMap(v)) {
       // Dicts were dropped here, so a counting solution's own tables never
       // reached the panel — the author saw their loop variable and nothing else.
-      const entries = Object.entries(v).filter(([, x]) => isScalar(x));
+      const entries = Object.entries(v).filter(([k, x]) => k !== NODE_ID && isScalar(x));
       if (entries.length > 0 || Object.keys(v).length === 0) {
         out[k] = Object.fromEntries(entries) as VariableValue;
       }
@@ -830,16 +875,30 @@ export function narrateTrace(
   const containers = detectContainers(sourceCode);
   const sets = detectSets(sourceCode);
   const tree = hasRecursion(traceHistory) ? new CallTree() : null;
+  const ids = newNodeIds();
 
   let prevStructures: VisualizationStructures | null = null;
 
   const frames: TimelineFrame[] = traceHistory.map((step, index) => {
     const sourceLine = sourceLines[step.line - 1] ?? "";
     const changed = changedNames(step.vars, traceHistory[index - 1]?.vars);
-    const structures = inferStructures(step.vars, containers, sets);
+    const { structures, pointers: nodePointers } = inferStructures(
+      step.vars,
+      containers,
+      sets,
+      step.roots,
+      ids
+    );
     if (tree) {
       tree.observe(step);
       structures.treeData = tree.snapshot();
+    }
+    // The author's own tree — the one the entry call was handed, a trie on
+    // `self`, a union-find forest — with the node the code is at marked.
+    const dataTree = findDataTree(step.roots, step.vars, sourceCode, ids.tree);
+    if (dataTree) {
+      structures.dataTreeData = dataTree.nodes;
+      if (dataTree.current) nodePointers.treeNode = dataTree.current;
     }
     const isCondition = step.kind === "condition" || step.kind === "loop";
 
@@ -857,10 +916,11 @@ export function narrateTrace(
       step: index,
       mode: pickMode(structures),
       structures,
-      activePointers: withCallPointers(inferPointers(step.vars), step, tree),
+      activePointers: withCallPointers({ ...inferPointers(step.vars), ...nodePointers }, step, tree),
       highlightedElements: [
         ...inferHighlights(step.vars, structures.arrayData.length),
         ...(tree?.pathTo(step.callId) ?? []),
+        ...(dataTree?.highlights ?? []),
       ],
       statusType: step.kind === "return" ? "SUCCESS" : "EXPLORE",
       message: buildMessage(step, sourceLine, changed),

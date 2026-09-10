@@ -71,7 +71,7 @@ const CANONICAL_WARNING =
 function formatTraceFailureWarning(reason?: string): string | undefined {
   if (!reason) return undefined;
   const trimmed = reason.replace(/\s*$/, "").replace(/\.$/, "");
-  return `${trimmed} — the steps below are a generic walkthrough, not a trace of your code.`;
+  return `${trimmed} — the steps below are a walkthrough of the usual approach, not a trace of your code.`;
 }
 
 function isJavaScriptLike(language?: string): boolean {
@@ -390,7 +390,9 @@ export async function analyzeLocally(
     const result = runPatternTracer(rawCode, detection.pattern, language, detection);
     if (result) {
       result.patternHint = hint;
-      result.warning = result.warning ?? CANONICAL_WARNING;
+      // When the author's own run failed, say why: a canned walkthrough with
+      // no reason attached reads as if it were the trace.
+      result.warning = result.warning ?? formatTraceFailureWarning(traceFailure) ?? CANONICAL_WARNING;
       return finalizeResult(result, rawCode, start);
     }
   }

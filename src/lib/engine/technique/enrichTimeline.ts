@@ -5,7 +5,7 @@ import type {
   VisualizationMode,
   VisualizationStructures,
 } from "@/lib/types";
-import type { VisualizationTechnique } from "./types";
+import { ALL_TECHNIQUES, type VisualizationTechnique } from "./types";
 import { inferTechniquesFromCode } from "./inferTechnique";
 
 const POINTER_ALIASES: [string, string][] = [
@@ -85,7 +85,64 @@ const LAYER_MODE: Partial<Record<VisualizationTechnique, VisualizationMode>> = {
   sliding_window: "ARRAY",
   binary_search: "ARRAY",
   array_scan: "ARRAY",
+  dp_1d: "ARRAY",
+  greedy: "ARRAY",
+  tree: "TREE",
+  trie: "TREE",
+  advanced_graph: "TREE",
 };
+
+type Pair = [number, number];
+
+function isPairList(v: unknown): v is Pair[] {
+  return (
+    Array.isArray(v) &&
+    v.length > 0 &&
+    v.every((p) => Array.isArray(p) && p.length === 2 && typeof p[0] === "number" && typeof p[1] === "number")
+  );
+}
+
+/** Names an accumulating answer usually goes by. */
+const OUTPUT_NAME_RE = /^(res|result|results|merged|output|out|ans|answer)$/;
+
+/**
+ * The interval lists in scope: the input under its own name, and the answer
+ * being built beneath it when there is one. Nothing is sorted here — a list
+ * the author forgot to sort draws unsorted, which is the bug made visible.
+ */
+export function extractIntervals(
+  vars?: Record<string, VariableValue>
+): VisualizationStructures["intervalData"] | undefined {
+  if (!vars) return undefined;
+  const lists = Object.entries(vars).filter(([, v]) => isPairList(v)) as [string, Pair[]][];
+  if (lists.length === 0) return undefined;
+  const primary =
+    lists.find(([n]) => /interval/i.test(n) && !OUTPUT_NAME_RE.test(n)) ??
+    lists.find(([n]) => !OUTPUT_NAME_RE.test(n)) ??
+    lists[0];
+  const secondary = lists.find(([n]) => n !== primary[0] && OUTPUT_NAME_RE.test(n));
+  return {
+    name: primary[0],
+    items: primary[1],
+    secondary: secondary ? { name: secondary[0], items: secondary[1] } : undefined,
+  };
+}
+
+/** Loop indices are positions, not numbers whose bits mean anything. */
+const NOT_A_BIT_VALUE = new Set(["i", "j", "k", "idx", "index", "n_bits", "length", "size"]);
+
+/** The integers worth drawing bit by bit, in the order the author holds them. */
+export function extractBits(vars?: Record<string, VariableValue>): VisualizationStructures["bitData"] {
+  if (!vars) return undefined;
+  const out: { name: string; value: number }[] = [];
+  for (const [name, v] of Object.entries(vars)) {
+    if (typeof v !== "number" || !Number.isInteger(v) || NOT_A_BIT_VALUE.has(name)) continue;
+    if (Math.abs(v) >= 2 ** 31) continue;
+    out.push({ name, value: v });
+    if (out.length === 6) break;
+  }
+  return out.length > 0 ? out : undefined;
+}
 
 /** The modes that have something to draw in this frame. */
 function modesWithData(s: VisualizationStructures): VisualizationMode[] {
@@ -94,7 +151,7 @@ function modesWithData(s: VisualizationStructures): VisualizationMode[] {
   // An empty dict still counts: watching it start empty and fill is the point.
   if ((s.mapsData?.length ?? 0) > 0 || Object.keys(s.mapData).length > 0) out.push("HASH_MAP");
   if (s.listData.length > 0) out.push("LINKED_LIST");
-  if (s.treeData.length > 0) out.push("TREE");
+  if (s.treeData.length > 0 || (s.dataTreeData?.length ?? 0) > 0) out.push("TREE");
   return out;
 }
 
@@ -233,18 +290,43 @@ function applyTechniqueVisuals(
       break;
     }
 
+    case "dp_1d":
+    case "greedy":
+      mode = "ARRAY";
+      if (i !== undefined) highlights = [...new Set([...highlights, i])];
+      break;
+
     case "dfs":
     case "bfs":
     case "backtrack":
     case "recursion":
     case "graph":
-      if (structures.treeData.length > 0) mode = "TREE";
+    case "tree":
+    case "trie":
+    case "advanced_graph":
+      if (structures.treeData.length > 0 || (structures.dataTreeData?.length ?? 0) > 0) mode = "TREE";
       break;
 
     case "linked_list":
     case "linked_list_cycle":
       if (structures.listData.length > 0) mode = "LINKED_LIST";
       break;
+
+    case "intervals": {
+      const intervals = extractIntervals(frame.variables);
+      if (intervals) {
+        structures.intervalData = intervals;
+        // The same pairs would otherwise also draw as a two-column matrix.
+        if (structures.gridData?.every((row) => row.length === 2)) structures.gridData = [];
+      }
+      break;
+    }
+
+    case "bit_manipulation": {
+      const bits = extractBits(frame.variables);
+      if (bits) structures.bitData = bits;
+      break;
+    }
 
     default:
       break;
@@ -267,14 +349,8 @@ function applyTechniqueVisuals(
   };
 }
 
-const ALLOWED: VisualizationTechnique[] = [
-  "two_pointer", "sliding_window", "binary_search", "dp_grid", "dfs", "bfs", "graph",
-  "backtrack", "recursion", "hash_map", "hash_set", "linked_list", "linked_list_cycle",
-  "heap", "array_scan", "generic",
-];
-
 function asTechnique(v: unknown): VisualizationTechnique | undefined {
-  return typeof v === "string" && ALLOWED.includes(v as VisualizationTechnique)
+  return typeof v === "string" && ALL_TECHNIQUES.includes(v as VisualizationTechnique)
     ? (v as VisualizationTechnique)
     : undefined;
 }

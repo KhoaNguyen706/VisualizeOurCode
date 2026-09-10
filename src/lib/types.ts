@@ -58,6 +58,30 @@ export interface VisualizationStructures {
   resultData?: (number | string)[];
   /** Working queue / stack the traversal drives itself from. */
   containerData?: ContainerView;
+  /**
+   * The author's own tree — a binary tree the entry call was handed, a trie
+   * being built, a union-find forest — as distinct from `treeData`, which is
+   * the tree of calls. A recursive walk over a tree has both.
+   */
+  dataTreeData?: TreeNode[];
+  /** A list of `[start, end]` pairs, drawn as bars on one number line. */
+  intervalData?: IntervalView;
+  /** Integers the code works on bit by bit, each drawn as its binary digits. */
+  bitData?: BitView[];
+}
+
+/** The author's list of intervals, under its own name. */
+export interface IntervalView {
+  name: string;
+  items: [number, number][];
+  /** A second list drawn beneath the first — the merged output, say. */
+  secondary?: { name: string; items: [number, number][] };
+}
+
+/** One integer variable, to be drawn as its bits. */
+export interface BitView {
+  name: string;
+  value: number;
 }
 
 export interface ActivePointers {

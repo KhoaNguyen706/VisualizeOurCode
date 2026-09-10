@@ -148,6 +148,8 @@ export interface PythonStep {
   depth?: number;
   /** Present only on the frame's `return` event. */
   returnValue?: unknown;
+  /** The entry call's node arguments, as they stand entering this line. */
+  roots?: Record<string, unknown>;
 }
 
 /** What the harness serialises back to JS as a JSON string. */
@@ -223,6 +225,10 @@ export function pythonStepsToTraceHistory(
       vars: sameCall ? follower.vars : s.vars,
       kind: "mutation",
     };
+    // The roots are shared objects, so whichever call the next record belongs
+    // to, its roots are the structure as this line left it.
+    const roots = follower?.roots ?? s.roots;
+    if (roots) step.roots = roots;
     if (s.frame !== undefined) {
       step.callId = s.frame;
       if (s.parent !== undefined && s.parent !== null) step.parentCallId = s.parent;

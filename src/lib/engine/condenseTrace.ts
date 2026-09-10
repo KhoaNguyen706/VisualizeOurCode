@@ -17,8 +17,15 @@ import { formatValue } from "./narrateTrace";
  * solution still animates wrongly. Only the granularity changes.
  */
 
-/** Names that render as an arrow over the array, per `inferHighlights`. */
-const RENDERED_POINTERS = ["i", "j", "k", "left", "right", "lo", "hi", "start", "end", "mid"];
+/**
+ * Names that render as an arrow over the array, per `inferHighlights`, and
+ * the pointers drawn on a linked list's nodes: a `slow`/`fast` step moves a
+ * label even though no node changes.
+ */
+const RENDERED_POINTERS = [
+  "i", "j", "k", "left", "right", "lo", "hi", "start", "end", "mid",
+  "current", "prev", "slow", "fast",
+];
 
 /**
  * Everything the canvas draws, as a comparable string. Two frames with the same
@@ -33,6 +40,10 @@ function visibleSignature(f: TimelineFrame): string {
     s.mapData,
     s.listData.map((n) => [n.id, n.value, n.next]),
     s.treeData.map((n) => [n.id, n.note ?? null, n.done ?? false]),
+    // The author's own tree changes shape when it is mutated (an invert, an
+    // insert) and changes colour as the walk moves; both are worth a beat.
+    s.dataTreeData?.map((n) => [n.id, n.value, n.children, n.note ?? null]) ?? null,
+    f.activePointers.treeNode ?? null,
     s.resultData ?? null,
     s.containerData ?? null,
     f.highlightedElements,
@@ -56,6 +67,7 @@ function hasDrawableState(f: TimelineFrame): boolean {
     Object.keys(s.mapData).length > 0 ||
     s.listData.length > 0 ||
     s.treeData.length > 0 ||
+    (s.dataTreeData?.length ?? 0) > 0 ||
     (s.resultData?.length ?? 0) > 0 ||
     s.containerData !== undefined
   );

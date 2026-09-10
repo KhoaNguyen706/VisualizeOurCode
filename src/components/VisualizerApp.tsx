@@ -16,6 +16,8 @@ import { TraceStepView } from "@/components/engine/TraceStepView";
 import { PatternHintBanner } from "@/components/engine/PatternHintBanner";
 import { StateInspector } from "@/components/engine/StateInspector";
 import { BottomPanel } from "@/components/engine/BottomPanel";
+import { RoadmapView } from "@/components/engine/RoadmapView";
+import { topicOf } from "@/lib/roadmap";
 
 /** Everything known about the run whose timeline is on screen. */
 export interface RunInfo {
@@ -75,6 +77,8 @@ export function VisualizerApp() {
   const [run, setRun] = useState<RunInfo | undefined>();
   const [stage, setStage] = useState<LoadStage>("idle");
   const [error, setError] = useState<string | null>(null);
+  // The roadmap sits in place of the canvas while it is open; a run closes it.
+  const [roadmapOpen, setRoadmapOpen] = useState(false);
 
   const [leftWidth, setLeftWidth] = useState(() => readWidth(LEFT_KEY, LEFT.initial, LEFT.min, LEFT.max));
   const [rightWidth, setRightWidth] = useState(() => readWidth(RIGHT_KEY, RIGHT.initial, RIGHT.min, RIGHT.max));
@@ -105,6 +109,7 @@ export function VisualizerApp() {
       setScenario(generated);
       setRun(info);
       setHasVisualization(true);
+      setRoadmapOpen(false);
     },
     [player]
   );
@@ -255,7 +260,11 @@ export function VisualizerApp() {
       style={{ background: "var(--mac-window)" }}
       suppressHydrationWarning
     >
-      <Header getShareUrl={() => shareUrl({ code, language, testCase: testCase.trim() || undefined })} />
+      <Header
+        getShareUrl={() => shareUrl({ code, language, testCase: testCase.trim() || undefined })}
+        onToggleRoadmap={() => setRoadmapOpen((o) => !o)}
+        roadmapOpen={roadmapOpen || !hasVisualization}
+      />
 
       <div className="flex flex-1 min-h-0">
         <CodeEditor
@@ -294,7 +303,18 @@ export function VisualizerApp() {
           style={{ background: "var(--mac-content)" }}
         >
           <div className="flex-1 min-h-0 overflow-auto p-5">
-            {hasVisualization ? (
+            {hasVisualization && roadmapOpen ? (
+              <RoadmapView
+                currentTopic={topicOf(run?.techniques)}
+                onRunSample={startSample}
+                onLoadSample={(id) => {
+                  loadSample(id);
+                  setRoadmapOpen(false);
+                }}
+                onClose={() => setRoadmapOpen(false)}
+                compact
+              />
+            ) : hasVisualization ? (
               <>
                 <PatternHintBanner hint={run?.patternHint} isLiveTrace={run?.source === "trace"} />
                 <TraceStepView
@@ -307,7 +327,7 @@ export function VisualizerApp() {
                 <VisualizationCanvas frame={player.currentFrame} />
               </>
             ) : (
-              <EmptyVisualization stage={stage} onLoadSample={startSample} />
+              <EmptyVisualization stage={stage} onRunSample={startSample} onLoadSample={loadSample} />
             )}
           </div>
         </main>
@@ -393,18 +413,13 @@ function Divider({ onDrag }: { onDrag: (dx: number) => void }) {
   );
 }
 
-const STARTERS: { id: string; title: string; what: string }[] = [
-  { id: "two-sum-py", title: "Two Sum", what: "array + hash map" },
-  { id: "fib-recursion-py", title: "Fibonacci", what: "recursion — call tree" },
-  { id: "grid-bfs-seen-py", title: "Walls and Gates", what: "BFS — queue over a grid" },
-  { id: "sliding-window-py", title: "Sliding Window", what: "two pointers on an array" },
-];
-
 function EmptyVisualization({
   stage,
+  onRunSample,
   onLoadSample,
 }: {
   stage: LoadStage;
+  onRunSample: (id: string) => void;
   onLoadSample: (id: string) => void;
 }) {
   if (stage !== "idle") {
@@ -420,54 +435,15 @@ function EmptyVisualization({
     );
   }
 
+  // The map is the empty state: paste a solution, or start from a topic.
   return (
-    <div className="h-full flex flex-col items-center justify-center text-center gap-6 select-none">
-      <svg width="132" height="76" viewBox="0 0 132 76" fill="none" aria-hidden>
-        {[0, 1, 2, 3].map((i) => (
-          <rect
-            key={i}
-            x={6 + i * 31}
-            y={10}
-            width="25"
-            height="25"
-            rx="6"
-            fill="var(--ramp-1)"
-            opacity={1 - i * 0.22}
-          />
-        ))}
-        <path d="M18 52 H114" stroke="var(--mac-separator)" strokeWidth="2" strokeLinecap="round" />
-        <circle cx="18" cy="52" r="4.5" fill="var(--mac-accent)" />
-        <circle cx="66" cy="52" r="4.5" fill="var(--mac-accent)" opacity="0.45" />
-        <circle cx="114" cy="52" r="4.5" fill="var(--mac-accent)" opacity="0.2" />
-      </svg>
-      <div className="max-w-[400px]">
-        <p className="text-[15px] font-medium" style={{ color: "var(--mac-text)" }}>
-          Nothing traced yet
-        </p>
-        <p className="text-[12.5px] mt-1.5 leading-relaxed" style={{ color: "var(--mac-text-2)" }}>
-          Paste your solution — Python or JavaScript runs for real, mistakes and all — then
-          press <span style={{ color: "var(--mac-accent)" }}>Visualize</span> or{" "}
-          <kbd className="font-code text-[11px]">⌘↩</kbd>.
-        </p>
-      </div>
-      <div className="flex flex-wrap justify-center gap-2 max-w-[520px]">
-        {STARTERS.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            onClick={() => onLoadSample(s.id)}
-            className="mac-card text-left px-3 py-2 hover:border-[var(--mac-accent)] transition-colors"
-            style={{ minWidth: 150 }}
-          >
-            <div className="text-[12px] font-medium" style={{ color: "var(--mac-text)" }}>
-              {s.title}
-            </div>
-            <div className="text-[11px]" style={{ color: "var(--mac-text-3)" }}>
-              {s.what}
-            </div>
-          </button>
-        ))}
-      </div>
+    <div className="h-full flex flex-col gap-3">
+      <p className="text-[12.5px] leading-relaxed" style={{ color: "var(--mac-text-2)" }}>
+        Paste your solution — Python or JavaScript runs for real, mistakes and all — then press{" "}
+        <span style={{ color: "var(--mac-accent)" }}>Visualize</span> or{" "}
+        <kbd className="font-code text-[11px]">⌘↩</kbd>. Or start from the map.
+      </p>
+      <RoadmapView onRunSample={onRunSample} onLoadSample={onLoadSample} />
     </div>
   );
 }

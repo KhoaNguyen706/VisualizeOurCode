@@ -25,9 +25,9 @@ describe("inferTechniqueFromCode", () => {
     expect(inferTechniqueFromCode(code)).toBe("dp_grid");
   });
 
-  it("recognises memoised recursion as dp", () => {
+  it("recognises memoised recursion as 1-D dp", () => {
     const code = "memo = {}\ndef go(i):\n    if i in memo:\n        return memo[i]";
-    expect(inferTechniqueFromCode(code)).toBe("dp_grid");
+    expect(inferTechniqueFromCode(code)).toBe("dp_1d");
   });
 
   it("does not call plain grid indexing dp", () => {
@@ -56,7 +56,7 @@ describe("inferTechniquesFromCode", () => {
   it("keeps memoised recursion as dp and still shows the recursion and the memo", () => {
     const code =
       "memo = {}\ndef go(i):\n    if i in memo:\n        return memo[i]\n    memo[i] = go(i - 1) + go(i - 2)\n    return memo[i]";
-    expect(inferTechniquesFromCode(code)).toEqual(["dp_grid", "recursion", "hash_map"]);
+    expect(inferTechniquesFromCode(code)).toEqual(["dp_1d", "recursion", "hash_map"]);
   });
 
   it("promotes a set-based scan the single-label chain could only call a loop", () => {

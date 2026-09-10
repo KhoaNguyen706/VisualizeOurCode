@@ -159,6 +159,10 @@ class Solution:
   },
 ];
 
+// One case per roadmap topic that leans on the harness (TreeNode/ListNode
+// building, node ids, roots, multi-statement examples).
+CASES.push(...require("./roadmap-cases.js"));
+
 const STEP_COUNTER = /(\d+)\s*\/\s*(\d+)/;
 
 async function settle(page) {
@@ -200,7 +204,9 @@ async function run() {
   }
 
   let failures = 0;
-  for (const c of CASES) {
+  // CASE=name runs one case; CASE=py- runs every case whose name starts so.
+  const only = process.env.CASE;
+  for (const c of CASES.filter((c) => !only || c.name.startsWith(only))) {
     console.log(`\n=== ${c.name}`);
     await page.selectOption('select[aria-label="Language"]', c.language);
     await page.fill("textarea", c.code);
@@ -239,7 +245,7 @@ async function run() {
 
     console.log(`  steps: ${(endBody.match(STEP_COUNTER) || ["?"])[0]}  nodes: ${svgTexts.filter((s) => /\(/.test(s)).length}`);
     console.log(`  chips: ${chips.join(" | ")}`);
-    const warn = endBody.match(/(Runtime error[^\n]*|Execution stopped[^\n]*|not a trace of your code[^\n]*|raised an error[^\n]*)/);
+    const warn = endBody.match(/([^\n]*(?:Runtime error|Execution stopped|not a trace of your code|raised an error)[^\n]*)/);
     if (warn) console.log(`  note: ${warn[1]}`);
     if (errorPanel) {
       const text = await errorPanel.evaluate((el) => el.parentElement.innerText);

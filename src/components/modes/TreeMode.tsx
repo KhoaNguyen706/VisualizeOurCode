@@ -6,6 +6,12 @@ import type { TimelineFrame, TreeNode } from "@/lib/types";
 
 interface TreeModeProps {
   frame: TimelineFrame;
+  /** The nodes to draw; the frame's call tree when omitted. */
+  nodes?: TreeNode[];
+  /** Which pointer names the node being visited; `current` when omitted. */
+  currentKey?: string;
+  /** Leave the recursion-depth caption off — it belongs to the call tree. */
+  hideDepth?: boolean;
 }
 
 const CIRCLE_R = 28;
@@ -86,10 +92,10 @@ function nodeMetrics(items: Labelled[]): Metrics {
   };
 }
 
-export function TreeMode({ frame }: TreeModeProps) {
+export function TreeMode({ frame, nodes, currentKey = "current", hideDepth = false }: TreeModeProps) {
   const { activePointers, highlightedElements, structures } = frame;
-  const { treeData } = structures;
-  const currentId = activePointers.current as string | null | undefined;
+  const treeData = nodes ?? structures.treeData;
+  const currentId = activePointers[currentKey] as string | null | undefined;
   const scroller = useRef<HTMLDivElement>(null);
   const [boxWidth, setBoxWidth] = useState(0);
   /** null means "fit to the canvas"; a number is the reader's own zoom. */
@@ -97,6 +103,12 @@ export function TreeMode({ frame }: TreeModeProps) {
 
   const { items, caption } = useMemo(() => labelNodes(treeData), [treeData]);
   const metrics = useMemo(() => nodeMetrics(items), [items]);
+  // A node with no value is a spacer: it holds the place of a missing left
+  // child so the right child is drawn on the right, and is never itself drawn.
+  const spacers = useMemo(
+    () => new Set(items.filter((it) => it.label === "").map((it) => it.node.id)),
+    [items]
+  );
   const { positioned, edges, width, height } = useMemo(
     () => layoutTree(items, metrics),
     [items, metrics]
@@ -158,7 +170,7 @@ export function TreeMode({ frame }: TreeModeProps) {
               each node is a call to <span className="text-[var(--mac-accent)]">{caption}</span>
             </>
           ) : (
-            <span className="text-[var(--mac-text-3)]">{treeData.length} nodes</span>
+            <span className="text-[var(--mac-text-3)]">{treeData.length - spacers.size} nodes</span>
           )}
         </div>
         <ZoomControls
@@ -206,7 +218,7 @@ export function TreeMode({ frame }: TreeModeProps) {
             style={{ position: "absolute", left: Math.max(0, (boxWidth - 2 - viewW) / 2), top: 8 }}
           >
             <AnimatePresence>
-              {edges.map((edge) => {
+              {edges.filter((edge) => !spacers.has(edge.to)).map((edge) => {
                 const active =
                   highlightedElements.includes(edge.from) ||
                   highlightedElements.includes(edge.to) ||
@@ -230,7 +242,7 @@ export function TreeMode({ frame }: TreeModeProps) {
             </AnimatePresence>
 
             <AnimatePresence mode="popLayout">
-              {positioned.map(({ node, label, x, y }) => {
+              {positioned.filter(({ label }) => label !== "").map(({ node, label, x, y }) => {
                 const isHighlighted = highlightedElements.includes(node.id);
                 const isCurrent = currentId === node.id;
                 const isSuccess = label.startsWith("✓");
@@ -341,7 +353,7 @@ export function TreeMode({ frame }: TreeModeProps) {
         </div>
       </div>
 
-      {activePointers.depth !== undefined && (
+      {!hideDepth && activePointers.depth !== undefined && (
         <p className="text-center text-xs font-code text-[var(--mac-text-2)] mt-1.5">
           recursion depth: <span className="text-[var(--mac-accent)]">{activePointers.depth}</span>
         </p>
@@ -416,11 +428,11 @@ function layoutTree(items: Labelled[], metrics: Metrics) {
   const placedById = new Map<string, PositionedNode>();
   const edges: Edge[] = [];
   let leafIndex = 0;
-  const root = roots[0] ?? items[0];
   // Leave room under a pill for its note before the edge sets off.
   const edgeGap = pill ? 16 : 0;
 
-  if (root) {
+  // Every root is laid out, left to right: a union-find forest has many.
+  for (const root of roots.length ? roots : items.slice(0, 1)) {
     const xMap: Record<string, number> = {};
 
     function calcX(id: string): number {

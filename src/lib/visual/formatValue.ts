@@ -22,11 +22,60 @@ function render(value: unknown): string {
   }
   if (Array.isArray(value)) return `[${value.map(render).join(", ")}]`;
   if (typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>);
+    const obj = value as Record<string, unknown>;
+    // The judge's own notation for the node structures: a list as its values
+    // in order, a tree as its level order. Dumping the fields would print the
+    // whole structure nested inside its own first node.
+    if (isListNode(obj)) return listChain(obj);
+    if (isTreeNode(obj)) return `[${levelOrder(obj).map(render).join(", ")}]`;
+    const entries = Object.entries(obj).filter(([k]) => k !== "__id");
     if (entries.length === 0) return "{}";
     return `{${entries.map(([k, v]) => `${k}: ${render(v)}`).join(", ")}}`;
   }
   return String(value);
+}
+
+type Obj = Record<string, unknown>;
+
+function isListNode(v: unknown): v is Obj {
+  return !!v && typeof v === "object" && !Array.isArray(v) && "next" in v && ("val" in v || "value" in v);
+}
+
+function isTreeNode(v: unknown): v is Obj {
+  return !!v && typeof v === "object" && !Array.isArray(v) && ("left" in v || "right" in v) && ("val" in v || "value" in v);
+}
+
+function listChain(head: Obj): string {
+  const parts: string[] = [];
+  const seen = new Set<unknown>();
+  let node: unknown = head;
+  while (isListNode(node) && parts.length < 30) {
+    const key = node.__id ?? node;
+    if (seen.has(key)) {
+      parts.push("↺");
+      break;
+    }
+    seen.add(key);
+    parts.push(render(node.val ?? node.value));
+    node = node.next;
+  }
+  return parts.join(" → ");
+}
+
+function levelOrder(root: Obj): unknown[] {
+  const out: unknown[] = [];
+  const queue: unknown[] = [root];
+  while (queue.length && out.length < 60) {
+    const node = queue.shift();
+    if (!isTreeNode(node)) {
+      out.push(null);
+      continue;
+    }
+    out.push(node.val ?? node.value);
+    queue.push(node.left ?? null, node.right ?? null);
+  }
+  while (out.length && out[out.length - 1] === null) out.pop();
+  return out;
 }
 
 /**
